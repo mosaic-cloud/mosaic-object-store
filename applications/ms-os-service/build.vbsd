@@ -1,0 +1,10 @@
+
+(vbs:require-erlang)
+
+(vbs:define-erlang-application 'ms_os_service
+	dependencies: '(ve_cowboy ve_tools)
+	erl: "\\./sources/.*\\.erl"
+	hrl: "\\./sources/.*\\.hrl"
+	additional-ebin: "\\./sources/.*\\.app"
+	additional-priv: "\\./sources/.*\\.config"
+	otp-version: 17)
