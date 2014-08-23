@@ -12,7 +12,7 @@
 		object_select/1, object_select/2,
 		object_update/1, object_update/6, object_update/7, object_update/2,
 		object_update_data/2, object_update_data/3, object_update_data/4,
-		object_patch/4,
+		object_patch/2,
 		objects_select/1, objects_select/2]).
 
 
@@ -47,7 +47,7 @@ object_create (Collection, Object, Data, Indices, Links, Attachments, Annotation
 
 
 object_create (Key, Object) ->
-	case ms_os_coders:coerce_object (Key, Object) of
+	case ms_os_coders:coerce_object_with_key (Key, Object) of
 		{ok, Object_1} ->
 			call (object_create, Object_1);
 		Error = {error, _} ->
@@ -120,7 +120,7 @@ object_update (Collection, Object, Data, Indices, Links, Attachments, Annotation
 
 
 object_update (Key, Object) ->
-	case ms_os_coders:coerce_object (Key, Object) of
+	case ms_os_coders:coerce_object_with_key (Key, Object) of
 		{ok, Object_1} ->
 			call (object_update, Object_1);
 		Error = {error, _} ->
@@ -132,7 +132,7 @@ object_update (Key, Object) ->
 
 
 object_update_data (Key, Data) ->
-	object_patch (Key, data, update, Data).
+	object_patch (Key, {data, update, Data}).
 
 object_update_data (Key, DataType, DataData) ->
 	object_update_data (Key, {DataType, DataData}).
@@ -156,10 +156,6 @@ object_patch (Key, Patch) ->
 		Error = {error, _} ->
 			Error
 	end.
-
-
-object_patch (Key, Target, Operation, Argument) ->
-	object_patch (Key, {Target, Operation, Argument}).
 
 
 %----------------------------------------------------------------------------
