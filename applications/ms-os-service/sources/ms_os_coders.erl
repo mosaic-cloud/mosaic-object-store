@@ -12,18 +12,20 @@
 		mangle_object/2]).
 
 -export ([
-		coerce_object/6, coerce_object/1, coerce_object/2,
-		coerce_object_key/2, coerce_object_key/1,
+		coerce_object/6, coerce_object/7, coerce_object/1, coerce_object/2, coerce_objects/1, coerce_objects/2, coerce_object_with_key/2,
+		coerce_object_key/2, coerce_object_key/1, coerce_object_keys/1,
 		coerce_object_data/2, coerce_object_data/1,
 		coerce_object_index/2, coerce_object_index/1, coerce_object_indices/1,
 		coerce_object_link/2, coerce_object_link/1, coerce_object_links/1,
 		coerce_object_attachment/5, coerce_object_attachment/1, coerce_object_attachments/1,
+		coerce_object_annotation/2, coerce_object_annotation/1,
 		coerce_data/2, coerce_data/1,
-		coerce_attachment/4, coerce_attachment/1,
+		coerce_attachment/5, coerce_attachment/6, coerce_attachment/1, coerce_attachment/2, coerce_attachments/1, coerce_attachments/2,
 		coerce_annotation/2, coerce_annotation/1, coerce_annotations/1,
 		coerce_identifier/1,
 		coerce_content_type/1,
 		coerce_fingerprint/1,
+		coerce_value/1, coerce_values/1,
 		coerce_object_patch/1,
 		coerce_object_selector/1,
 		coerce_object_mangler/1]).
@@ -97,34 +99,201 @@
 %----------------------------------------------------------------------------
 
 
-merge_object (Object, none) ->
-	{ok, Object};
+merge_object (Object = #ms_os_object_v1{}, none) ->
+	merge_object (Object, simplify);
 	
-merge_object (NewObject, _OldObject) ->
-	{ok, NewObject}.
+merge_object (Object = #ms_os_object_v1{}, simplify) ->
+	coerce_object (Object);
+	
+merge_object (NewObject = #ms_os_object_v1{}, _OldObject = #ms_os_object_v1{}) ->
+	merge_object (NewObject, simplify).
 
 
 %----------------------------------------------------------------------------
 %----------------------------------------------------------------------------
 
 
-patch_object ({data, update, Data}, Object) ->
-	{ok, Object#ms_os_object_v1{data = Data}};
+patch_object (Patch, Object) ->
+	try
+		{ok, patch_object_ok (Patch, Object)}
+	catch
+		throw : {error, Reason} -> {error, Reason};
+		throw : Reason -> {error, {invalid_object_patch, Patch, {unexpected_error, Reason, erlang:get_stacktrace ()}}};
+		error : Reason -> {error, {invalid_object_patch, Patch, {unexpected_error, Reason, erlang:get_stacktrace ()}}};
+		exit : Reason -> {error, {invalid_object_patch, Patch, {unexpected_error, Reason, erlang:get_stacktrace ()}}}
+	end.
+
+
+patch_object_ok ({data, exclude}, Object) ->
+	Object#ms_os_object_v1{data = none};
 	
-patch_object ({indices, update, Indices}, Object) ->
-	{ok, Object#ms_os_object_v1{indices = Indices}};
+patch_object_ok ({data, update, Data}, Object) ->
+	Object#ms_os_object_v1{data = Data};
 	
-patch_object ({links, update, Links}, Object) ->
-	{ok, Object#ms_os_object_v1{links = Links}};
+	% ----------------------------------------
 	
-patch_object ({attachments, update, Attachments}, Object) ->
-	{ok, Object#ms_os_object_v1{attachments = Attachments}};
+patch_object_ok ({indices_all, exclude}, Object) ->
+	Object#ms_os_object_v1{indices = []};
 	
-patch_object ({annotations, update, Annotations}, Object) ->
-	{ok, Object#ms_os_object_v1{annotations = Annotations}};
+patch_object_ok ({indices_all, update, Indices}, Object) ->
+	Object#ms_os_object_v1{indices = Indices};
 	
-patch_object (Patch, _Object) ->
-	{error, {invalid_object_patch, Patch}}.
+patch_object_ok ({indices_each, Operation, Indices}, Object)
+			when (Operation =:= update); (Operation =:= include); (Operation =:= exclude) ->
+	Object#ms_os_object_v1{indices = patch_records_ok (Operation, Indices, Object#ms_os_object_v1.indices)};
+	
+patch_object_ok ({index_values, update, Index, Values}, Object) ->
+	patch_object_ok ({indices_each, update, [#ms_os_object_index_v1{key = Index, values = Values}]}, Object);
+	
+patch_object_ok ({index_values, Operation, Index_, Values}, Object)
+			when (Operation =:= include); (Operation =:= exclude) ->
+	Transformer = fun (Index) ->
+		Index#ms_os_object_index_v1{values = patch_values_ok (Operation, Values, Index#ms_os_object_index_v1.values)}
+	end,
+	Object#ms_os_object_v1{indices = patch_records_ok ({transform, Transformer}, [Index_], Object#ms_os_object_v1.indices)};
+	
+	% ----------------------------------------
+	
+patch_object_ok ({links_all, exclude}, Object) ->
+	Object#ms_os_object_v1{links = []};
+	
+patch_object_ok ({links_all, update, Links}, Object) ->
+	Object#ms_os_object_v1{links = Links};
+	
+patch_object_ok ({links_each, Operation, Links}, Object)
+			when (Operation =:= update); (Operation =:= include); (Operation =:= exclude) ->
+	Object#ms_os_object_v1{links = patch_records_ok (Operation, Links, Object#ms_os_object_v1.links)};
+	
+patch_object_ok ({link_references, update, Link, References}, Object) ->
+	patch_object_ok ({links_each, update, [#ms_os_object_link_v1{key = Link, references = References}]}, Object);
+	
+patch_object_ok ({link_references, Operation, Link_, Values}, Object)
+			when (Operation =:= include); (Operation =:= exclude) ->
+	Transformer = fun (Link) ->
+		Link#ms_os_object_link_v1{references = patch_values_ok (Operation, Values, Link#ms_os_object_link_v1.references)}
+	end,
+	Object#ms_os_object_v1{links = patch_records_ok ({transform, Transformer}, [Link_], Object#ms_os_object_v1.links)};
+	
+	% ----------------------------------------
+	
+patch_object_ok ({attachments_all, exclude}, Object) ->
+	Object#ms_os_object_v1{attachments = []};
+	
+patch_object_ok ({attachments_all, update, Attachments}, Object) ->
+	Object#ms_os_object_v1{attachments = Attachments};
+	
+patch_object_ok ({attachments_each, Operation, Attachments}, Object)
+			when (Operation =:= update); (Operation =:= include); (Operation =:= exclude) ->
+	Object#ms_os_object_v1{attachments = patch_records_ok (Operation, Attachments, Object#ms_os_object_v1.attachments)};
+	
+	% ----------------------------------------
+	
+patch_object_ok ({annotations_all, exclude}, Object) ->
+	Object#ms_os_object_v1{annotations = []};
+	
+patch_object_ok ({annotations_all, update, Annotations}, Object) ->
+	Object#ms_os_object_v1{annotations = Annotations};
+	
+patch_object_ok ({annotations_each, Operation, Annotations}, Object)
+			when (Operation =:= update); (Operation =:= include); (Operation =:= exclude) ->
+	Object#ms_os_object_v1{annotations = patch_records_ok (Operation, Annotations, Object#ms_os_object_v1.annotations)};
+	
+	% ----------------------------------------
+	
+patch_object_ok ({patches, Patches}, Object) ->
+	lists:foldl (fun patch_object_ok/2, Object, Patches);
+	
+	% ----------------------------------------
+	
+patch_object_ok (Patch, _Object) ->
+	throw ({error, {invalid_object_patch, Patch}}).
+
+
+patch_records_ok (update, NewRecords, OldRecords) ->
+	lists:foldl (
+			fun (NewRecord, CurrentRecords) ->
+				case lists:keytake (element (2, NewRecord), 2, CurrentRecords) of
+					{value, _OldRecord, CurrentRecords_2} ->
+						[NewRecord | CurrentRecords_2];
+					false ->
+						throw ({error, {missing, element (2, NewRecord)}})
+				end
+			end,
+			OldRecords, NewRecords);
+	
+patch_records_ok (include, NewRecords, OldRecords) ->
+	lists:foldl (
+			fun (NewRecord, CurrentRecords) ->
+				case lists:keysearch (element (2, NewRecord), 2, CurrentRecords) of
+					{value, _OldRecord} ->
+						throw ({error, {existing, element (2, NewRecord)}});
+					false ->
+						[NewRecord | CurrentRecords]
+				end
+			end,
+			OldRecords, NewRecords);
+	
+patch_records_ok (exclude, NewRecords, OldRecords) ->
+	lists:foldl (
+			fun (NewRecord, CurrentRecords) ->
+				case lists:keytake (NewRecord, 2, CurrentRecords) of
+					{value, _OldRecord, CurrentRecords_2} ->
+						CurrentRecords_2;
+					false ->
+						throw ({error, {missing, NewRecord}})
+				end
+			end,
+			OldRecords, NewRecords);
+	
+patch_records_ok ({transform, Transformer}, NewRecords, OldRecords) ->
+	lists:foldl (
+			fun (NewRecord, CurrentRecords) ->
+				case lists:keytake (NewRecord, 2, CurrentRecords) of
+					{value, OldRecord, CurrentRecords_2} ->
+						[Transformer (OldRecord) | CurrentRecords_2];
+					false ->
+						throw ({error, {missing, NewRecord}})
+				end
+			end,
+			OldRecords, NewRecords).
+
+
+patch_values_ok (include, NewValues, OldValues) ->
+	lists:foldl (
+			fun (NewValue, CurrentValues) ->
+				case lists_take (NewValue, CurrentValues) of
+					{value, _} ->
+						throw ({error, {exsting, NewValue}});
+					false ->
+						[NewValue, CurrentValues]
+				end
+			end,
+			OldValues, NewValues);
+	
+patch_values_ok (exclude, NewValues, OldValues) ->
+	lists:foldl (
+			fun (NewValue, CurrentValues) ->
+				case lists_take (NewValue, CurrentValues) of
+					{value, CurrentValues_2} ->
+						CurrentValues_2;
+					false ->
+						throw ({error, {missing, NewValue}})
+				end
+			end,
+			OldValues, NewValues).
+
+
+lists_take (Value, List) ->
+	lists_take (Value, List, []).
+
+lists_take (_, [], _) ->
+	false;
+	
+lists_take (Value, [Value | List], Others) ->
+	{value, List ++ Others};
+	
+lists_take (Value, [Other | List], Others) ->
+	lists_take (Value, List, [Other | Others]).
 
 
 %----------------------------------------------------------------------------
@@ -232,38 +401,68 @@ mangle_object (Mangler, _) ->
 
 
 coerce_object (Key, Data, Indices, Links, Attachments, Annotations) ->
+	coerce_object (Key, Data, Indices, Links, Attachments, Annotations, true).
+
+coerce_object (Key, Data, Indices, Links, Attachments, Annotations, WithKey)
+			when is_boolean (WithKey) ->
 	try
 		Entity = #ms_os_object_v1{
-				key = enforce_ok_1 (coerce_object_key (Key)),
-				data = case Data of
-						none ->
-							none;
-						_ ->
-							enforce_ok_1 (coerce_object_data (Data))
-				end,
+				key = if
+							WithKey -> enforce_ok_1 (coerce_object_key (Key));
+							(Key =:= none) -> none;
+							true -> throw ({error, {expected, none}})
+						end,
+				data = enforce_ok_1 (coerce_object_data (Data)),
 				indices = enforce_ok_1 (coerce_object_indices (Indices)),
 				links = enforce_ok_1 (coerce_object_links (Links)),
 				attachments = enforce_ok_1 (coerce_object_attachments (Attachments)),
-				annotations = enforce_ok_1 (coerce_annotations (Annotations))},
+				annotations = enforce_ok_1 (coerce_object_annotations (Annotations))},
 		{ok, Entity}
 	catch throw : Error = {error, _} -> Error end.
 
 
-coerce_object (Entity = #ms_os_object_v1{}) ->
+coerce_object (Entity) ->
+	coerce_object (Entity, true).
+
+coerce_object (Entity = #ms_os_object_v1{}, WithKey) ->
 	coerce_object (
 			Entity#ms_os_object_v1.key,
 			Entity#ms_os_object_v1.data,
 			Entity#ms_os_object_v1.indices,
 			Entity#ms_os_object_v1.links,
 			Entity#ms_os_object_v1.attachments,
-			Entity#ms_os_object_v1.annotations);
+			Entity#ms_os_object_v1.annotations,
+			WithKey);
 	
-coerce_object ({Key, Data, Indices, Links, Attachments, Annotations}) ->
-	coerce_object (Key, Data, Indices, Links, Attachments, Annotations).
+coerce_object ({Key, Data, Indices, Links, Attachments, Annotations}, WithKey) ->
+	coerce_object (Key, Data, Indices, Links, Attachments, Annotations, WithKey).
 
 
-coerce_object (Key = #ms_os_object_key_v1{}, Object = #ms_os_object_v1{key = none}) ->
-	coerce_object (Object#ms_os_object_v1{key = Key}).
+coerce_objects (Entities) ->
+	coerce_objects (Entities, true).
+
+coerce_objects (Entities, WithKey)
+			when is_list (Entities), is_boolean (WithKey) ->
+	try
+		{ok, enforce_ok_map (
+				fun (Entity) ->
+					coerce_object (Entity, WithKey)
+				end, Entities)}
+	catch throw : Error = {error, _} -> Error end.
+
+
+coerce_object_with_key (Key, Object) ->
+	case coerce_object (Object, false) of
+		{ok, Object_1} ->
+			case coerce_object_key (Key) of
+				{ok, Key_1} ->
+					{ok, Object_1#ms_os_object_v1{key = Key_1}};
+				Error = {error, _} ->
+					Error
+			end;
+		Error = {error, _} ->
+			Error
+	end.
 
 
 %----------------------------------------------------------------------------
@@ -287,6 +486,13 @@ coerce_object_key ({Collection, Object}) ->
 	coerce_object_key (Collection, Object).
 
 
+coerce_object_keys (Entities)
+			when is_list (Entities) ->
+	try
+		{ok, enforce_ok_map (fun coerce_object_key/1, Entities)}
+	catch throw : Error = {error, _} -> Error end.
+
+
 %----------------------------------------------------------------------------
 
 
@@ -297,107 +503,141 @@ coerce_object_data (Type, Data) ->
 coerce_object_data (none) ->
 	{ok, none};
 	
-coerce_object_data (Data) ->
-	coerce_data (Data).
+coerce_object_data (Entity) ->
+	coerce_data (Entity).
 
 
 %----------------------------------------------------------------------------
 
 
-coerce_object_index (Index, Values) ->
+coerce_object_index (Key, Values) ->
 	try
 		Entity = #ms_os_object_index_v1{
-				index = enforce_ok_1 (coerce_identifier (Index)),
-				values = enforce_ok_map (fun coerce_object_index_value/1, Values)},
+				key = enforce_ok_1 (coerce_identifier (Key)),
+				values = enforce_ok_1 (coerce_object_index_values (Values))},
 		{ok, Entity}
 	catch throw : Error = {error, _} -> Error end.
-
-coerce_object_index_value (Value) ->
-	coerce_term (Value, {simple_term}).
 
 
 coerce_object_index (Entity = #ms_os_object_index_v1{}) ->
 	coerce_object_index (
-			Entity#ms_os_object_index_v1.index,
+			Entity#ms_os_object_index_v1.key,
 			Entity#ms_os_object_index_v1.values);
 	
-coerce_object_index ({Index, Values}) ->
-	coerce_object_index (Index, Values).
+coerce_object_index ({Key, Values}) ->
+	coerce_object_index (Key, Values).
 
 
 coerce_object_indices (none) ->
 	{ok, []};
 	
-coerce_object_indices (Indices)
-			when is_list (Indices) ->
+coerce_object_indices (Entities)
+			when is_list (Entities) ->
 	try
-		{ok, enforce_ok_map (fun coerce_object_index/1, Indices)}
+		{ok, coerce_records_ok (enforce_ok_map (fun coerce_object_index/1, Entities))}
 	catch throw : Error = {error, _} -> Error end.
 
 
 %----------------------------------------------------------------------------
 
 
-coerce_object_link (Link, References) ->
+coerce_object_index_value (Value) ->
+	coerce_value (Value).
+
+
+coerce_object_index_values (none) ->
+	{ok, []};
+	
+coerce_object_index_values (Values)
+			when is_list (Values) ->
+	try
+		{ok, coerce_values_ok (enforce_ok_map (fun coerce_object_index_value/1, Values))}
+	catch throw : Error = {error, _} -> Error end.
+
+
+%----------------------------------------------------------------------------
+
+
+coerce_object_link (Key, References) ->
 	try
 		Entity = #ms_os_object_link_v1{
-				link = enforce_ok_1 (coerce_identifier (Link)),
-				references = enforce_ok_map (fun coerce_object_key/1, References)},
+				key = enforce_ok_1 (coerce_identifier (Key)),
+				references = enforce_ok_1 (coerce_object_link_references (References))},
 		{ok, Entity}
 	catch throw : Error = {error, _} -> Error end.
 
 
 coerce_object_link (Entity = #ms_os_object_link_v1{}) ->
 	coerce_object_link (
-			Entity#ms_os_object_link_v1.link,
+			Entity#ms_os_object_link_v1.key,
 			Entity#ms_os_object_link_v1.references);
 	
-coerce_object_link ({Link, References}) ->
-	coerce_object_link (Link, References).
+coerce_object_link ({Key, References}) ->
+	coerce_object_link (Key, References).
 
 
 coerce_object_links (none) ->
 	{ok, []};
 	
-coerce_object_links (Links)
-			when is_list (Links) ->
+coerce_object_links (Entities)
+			when is_list (Entities) ->
 	try
-		{ok, enforce_ok_map (fun coerce_object_link/1, Links)}
+		{ok, coerce_records_ok (enforce_ok_map (fun coerce_object_link/1, Entities))}
 	catch throw : Error = {error, _} -> Error end.
 
 
 %----------------------------------------------------------------------------
 
 
-coerce_object_attachment (Identifier, Type, Size, Fingerprint, Annotations) ->
+coerce_object_link_reference (Entity) ->
+	coerce_object_key (Entity).
+
+coerce_object_link_references (none) ->
+	{ok, []};
+	
+coerce_object_link_references (Entities)
+			when is_list (Entities) ->
 	try
-		Entity = {
-				enforce_ok_1 (coerce_identifier (Identifier)),
-				enforce_ok_1 (coerce_attachment (Type, Size, Fingerprint, Annotations))},
-		{ok, Entity}
+		{ok, coerce_values_ok (enforce_ok_map (fun coerce_object_link_reference/1, Entities))}
 	catch throw : Error = {error, _} -> Error end.
 
 
-coerce_object_attachment ({Identifier, Attachment}) ->
-	try
-		Entity = {
-				enforce_ok_1 (coerce_identifier (Identifier)),
-				enforce_ok_1 (coerce_attachment (Attachment))},
-		{ok, Entity}
-	catch throw : Error = {error, _} -> Error end;
-	
-coerce_object_attachment ({Identifier, Type, Size, Fingerprint, Annotations}) ->
-	coerce_object_attachment (Identifier, Type, Size, Fingerprint, Annotations).
+%----------------------------------------------------------------------------
+
+
+coerce_object_attachment (Key, Type, Size, Fingerprint, Annotations) ->
+	coerce_attachment (Key, Type, Size, Fingerprint, Annotations).
+
+
+coerce_object_attachment (Entity) ->
+	coerce_attachment (Entity).
 
 
 coerce_object_attachments (none) ->
 	{ok, []};
 	
-coerce_object_attachments (Attachments)
-			when is_list (Attachments) ->
-	try
-		{ok, enforce_ok_map (fun coerce_object_attachment/1, Attachments)}
-	catch throw : Error = {error, _} -> Error end.
+coerce_object_attachments (Entities)
+			when is_list (Entities) ->
+	coerce_attachments (Entities).
+
+
+%----------------------------------------------------------------------------
+
+
+coerce_object_annotation (Key, Value) ->
+	coerce_annotation (Key, Value).
+
+
+coerce_object_annotation (Entity) ->
+	coerce_annotation (Entity).
+
+
+coerce_object_annotations (none) ->
+	{ok, []};
+	
+coerce_object_annotations (Entities)
+			when is_list (Entities) ->
+	coerce_annotations (Entities).
 
 
 %----------------------------------------------------------------------------
@@ -412,7 +652,7 @@ coerce_data (Type, Data) ->
 	catch throw : Error = {error, _} -> Error end.
 
 coerce_data_data (Data) ->
-	coerce_term (Data, {simple_term}).
+	coerce_value (Data).
 
 
 coerce_data (Entity = #ms_os_data_v1{}) ->
@@ -427,9 +667,18 @@ coerce_data ({Type, Data}) ->
 %----------------------------------------------------------------------------
 
 
-coerce_attachment (Type, Size, Fingerprint, Annotations) ->
+coerce_attachment (Key, Type, Size, Fingerprint, Annotations) ->
+	coerce_attachment (Key, Type, Size, Fingerprint, Annotations, true).
+
+coerce_attachment (Key, Type, Size, Fingerprint, Annotations, WithKey)
+			when is_boolean (WithKey) ->
 	try
 		Entity = #ms_os_attachment_v1{
+				key = if
+							WithKey -> enforce_ok_1 (coerce_identifier (Key));
+							(Key =:= none) -> none;
+							true -> throw ({error, {expected, none}})
+						end,
 				type = enforce_ok_1 (coerce_content_type (Type)),
 				size = enforce_ok_1 (coerce_term (Size, {integer, {positive, false}})),
 				fingerprint = enforce_ok_1 (coerce_fingerprint (Fingerprint)),
@@ -438,48 +687,64 @@ coerce_attachment (Type, Size, Fingerprint, Annotations) ->
 	catch throw : Error = {error, _} -> Error end.
 
 
-coerce_attachment (Entity = #ms_os_attachment_v1{}) ->
+coerce_attachment (Entity) ->
+	coerce_attachment (Entity, true).
+
+coerce_attachment (Entity = #ms_os_attachment_v1{}, WithKey) ->
 	coerce_attachment (
+			Entity#ms_os_attachment_v1.key,
 			Entity#ms_os_attachment_v1.type,
 			Entity#ms_os_attachment_v1.size,
 			Entity#ms_os_attachment_v1.fingerprint,
-			Entity#ms_os_attachment_v1.annotations);
+			Entity#ms_os_attachment_v1.annotations,
+			WithKey);
 	
-coerce_attachment ({Type, Size, Fingerprint, Annotations}) ->
-	coerce_attachment (Type, Size, Fingerprint, Annotations).
+coerce_attachment ({Key, Type, Size, Fingerprint, Annotations}, WithKey) ->
+	coerce_attachment (Key, Type, Size, Fingerprint, Annotations, WithKey).
+
+
+coerce_attachments (Entities) ->
+	coerce_attachments (Entities, true).
+
+coerce_attachments (Entities, WithKey)
+			when is_list (Entities), is_boolean (WithKey) ->
+	try
+		{ok, coerce_records_ok (enforce_ok_map (
+				fun (Attachment) ->
+					coerce_attachment (Attachment, WithKey)
+				end,
+				Entities))}
+	catch throw : Error = {error, _} -> Error end.
 
 
 %----------------------------------------------------------------------------
 
 
-coerce_annotation (Identifier, Value) ->
+coerce_annotation (Key, Value) ->
 	try
 		Entity = #ms_os_annotation_v1{
-				annotation = enforce_ok_1 (coerce_identifier (Identifier)),
+				key = enforce_ok_1 (coerce_identifier (Key)),
 				value = enforce_ok_1 (coerce_annotation_value (Value))},
 		{ok, Entity}
 	catch throw : Error = {error, _} -> Error end.
 
 coerce_annotation_value (Value) ->
-	coerce_term (Value, {simple_term}).
+	coerce_value (Value).
 
 
 coerce_annotation (Entity = #ms_os_annotation_v1{}) ->
 	coerce_annotation (
-			Entity#ms_os_annotation_v1.annotation,
+			Entity#ms_os_annotation_v1.key,
 			Entity#ms_os_annotation_v1.value);
 	
-coerce_annotation ({Annotation, Value}) ->
-	coerce_annotation (Annotation, Value).
+coerce_annotation ({Key, Value}) ->
+	coerce_annotation (Key, Value).
 
 
-coerce_annotations (none) ->
-	{ok, []};
-	
-coerce_annotations (Annotations)
-			when is_list (Annotations) ->
+coerce_annotations (Entities)
+			when is_list (Entities) ->
 	try
-		{ok, enforce_ok_map (fun coerce_annotation/1, Annotations)}
+		{ok, coerce_records_ok (enforce_ok_map (fun coerce_annotation/1, Entities))}
 	catch throw : Error = {error, _} -> Error end.
 
 
@@ -493,6 +758,12 @@ coerce_identifier (Identifier)
 coerce_identifier (Identifier)
 			when is_atom (Identifier) ->
 	coerce_identifier (erlang:atom_to_binary (Identifier, utf8)).
+
+coerce_identifiers (Identifiers)
+			when is_list (Identifiers) ->
+	try
+		{ok, enforce_ok_map (fun coerce_identifier/1, Identifiers)}
+	catch throw : Error = {error, _} -> Error end.
 
 
 coerce_content_type (ContentType)
@@ -508,8 +779,22 @@ coerce_fingerprint (Fingerprint)
 	{ok, Fingerprint}.
 
 
+coerce_value (Value) ->
+	{ok, Value}.
+
+coerce_values (Values)
+			when is_list (Values) ->
+	{ok, Values}.
+
 
 %----------------------------------------------------------------------------
+
+
+coerce_records_ok (Records) ->
+	lists:ukeysort (2, Records).
+
+coerce_values_ok (Values) ->
+	lists:usort (Values).
 
 
 coerce_term (Term, Schema) ->
@@ -536,25 +821,143 @@ coerce_object_patch (Patch) ->
 	end.
 
 
+coerce_object_patch_ok (Patch = {data, exclude}) ->
+	Patch;
+	
 coerce_object_patch_ok ({data, Operation, Data})
 			when (Operation =:= update) ->
 	{data, Operation, enforce_ok_1 (coerce_object_data (Data))};
 	
-coerce_object_patch_ok ({indices, Operation, Indices})
-			when (Operation =:= update); (Operation =:= include), (Operation =:= exclude) ->
-	{indices, Operation, enforce_ok_1 (coerce_object_indices (Indices))};
+	% ----------------------------------------
 	
-coerce_object_patch_ok ({links, Operation, Links})
-			when (Operation =:= update); (Operation =:= include), (Operation =:= exclude) ->
-	{links, Operation, enforce_ok_1 (coerce_object_links (Links))};
+coerce_object_patch_ok (Patch = {indices_all, exclude}) ->
+	Patch;
 	
-coerce_object_patch_ok ({attachments, Operation, Attachments})
-			when (Operation =:= update); (Operation =:= include), (Operation =:= exclude) ->
-	{attachments, Operation, enforce_ok_1 (coerce_object_attachments (Attachments))};
+coerce_object_patch_ok ({indices_all, Operation, Indices})
+			when (Operation =:= update) ->
+	{indices_all, Operation, enforce_ok_1 (coerce_object_indices (Indices))};
 	
-coerce_object_patch_ok ({annotations, Operation, Annotations})
-			when (Operation =:= update); (Operation =:= include), (Operation =:= exclude) ->
-	{annotations, Operation, enforce_ok_1 (coerce_annotations (Annotations))}.
+coerce_object_patch_ok ({indices_each, Operation, Indices})
+			when (Operation =:= update); (Operation =:= include) ->
+	{indices_each, Operation, enforce_ok_1 (coerce_object_indices (Indices))};
+	
+coerce_object_patch_ok ({indices_each, Operation, Indices})
+			when (Operation =:= exclude) ->
+	{indices_each, Operation, enforce_ok_1 (coerce_identifiers (Indices))};
+	
+coerce_object_patch_ok ({index, Operation, Index})
+			when (Operation =:= update); (Operation =:= include); (Operation =:= exclude) ->
+	coerce_object_patch_ok ({indices_each, Operation, [Index]});
+	
+	% ----------------------------------------
+	
+coerce_object_patch_ok ({index_values, Operation, Index, Values})
+			when (Operation =:= update); (Operation =:= include); (Operation =:= exclude) ->
+	{index_values, Operation, enforce_ok_1 (coerce_identifier (Index)), enforce_ok_1 (coerce_object_index_values (Values))};
+	
+coerce_object_patch_ok ({index_value, Operation, Index, Value})
+			when (Operation =:= include); (Operation =:= exclude) ->
+	coerce_object_patch_ok ({index_values, Operation, Index, [Value]});
+	
+	% ----------------------------------------
+	
+coerce_object_patch_ok (Patch = {links_all, exclude}) ->
+	Patch;
+	
+coerce_object_patch_ok ({links_all, Operation, Links})
+			when (Operation =:= update) ->
+	{links_all, Operation, enforce_ok_1 (coerce_object_links (Links))};
+	
+coerce_object_patch_ok ({links_each, Operation, Links})
+			when (Operation =:= update); (Operation =:= include) ->
+	{links_each, Operation, enforce_ok_1 (coerce_object_links (Links))};
+	
+coerce_object_patch_ok ({links_each, Operation, Links})
+			when (Operation =:= exclude) ->
+	{links_each, Operation, enforce_ok_1 (coerce_identifiers (Links))};
+	
+coerce_object_patch_ok ({link, Operation, Link})
+			when (Operation =:= update); (Operation =:= include); (Operation =:= exclude) ->
+	coerce_object_patch_ok ({links_each, Operation, [Link]});
+	
+	% ----------------------------------------
+	
+coerce_object_patch_ok ({link_references, Operation, Link, References})
+			when (Operation =:= update); (Operation =:= include); (Operation =:= exclude) ->
+	{link_references, Operation, enforce_ok_1 (coerce_identifier (Link)), enforce_ok_1 (coerce_object_link_references (References))};
+	
+coerce_object_patch_ok ({link_reference, Operation, Link, Reference})
+			when (Operation =:= include); (Operation =:= exclude) ->
+	coerce_object_patch_ok ({link_references, Operation, Link, [Reference]});
+	
+	% ----------------------------------------
+	
+coerce_object_patch_ok (Patch = {attachments_all, exclude}) ->
+	Patch;
+	
+coerce_object_patch_ok ({attachments_all, Operation, Attachments})
+			when (Operation =:= update) ->
+	{attachments_all, Operation, enforce_ok_1 (coerce_object_attachments (Attachments))};
+	
+coerce_object_patch_ok ({attachments_each, Operation, Attachments})
+			when (Operation =:= update); (Operation =:= include) ->
+	{attachments_each, Operation, enforce_ok_1 (coerce_object_attachments (Attachments))};
+	
+coerce_object_patch_ok ({attachments_each, Operation, Attachments})
+			when (Operation =:= exclude) ->
+	{attachments_each, Operation, enforce_ok_1 (coerce_identifier (Attachments))};
+	
+coerce_object_patch_ok ({attachment, Operation, Attachment})
+			when (Operation =:= update); (Operation =:= include); (Operation =:= exclude) ->
+	coerce_object_patch_ok ({attachments_each, Operation, [Attachment]});
+	
+	% ----------------------------------------
+	
+coerce_object_patch_ok (Patch = {attachment_annotations_all, exclude}) ->
+	Patch;
+	
+coerce_object_patch_ok ({attachment_annotations_all, Operation, Attachment, Annotations})
+			when (Operation =:= update) ->
+	{attachment_annotations_all, Operation, enforce_ok_1 (coerce_identifier (Attachment)), enforce_ok_1 (coerce_object_annotations (Annotations))};
+	
+coerce_object_patch_ok ({attachment_annotations_each, Operation, Attachment, Annotations})
+			when (Operation =:= update); (Operation =:= include) ->
+	{attachment_annotations_each, Operation, enforce_ok_1 (coerce_identifier (Attachment)), enforce_ok_1 (coerce_object_annotations (Annotations))};
+	
+coerce_object_patch_ok ({attachment_annotations_each, Operation, Attachment, Annotations})
+			when (Operation =:= exclude) ->
+	{attachment_annotations_each, Operation, enforce_ok_1 (coerce_identifier (Attachment)), enforce_ok_1 (coerce_identifier (Annotations))};
+	
+coerce_object_patch_ok ({attachment_annotation, Operation, Attachment, Annotation})
+			when (Operation =:= update); (Operation =:= include); (Operation =:= exclude) ->
+	coerce_object_patch_ok ({attachment_annotations_each, Operation, Attachment, [Annotation]});
+	
+	% ----------------------------------------
+	
+coerce_object_patch_ok (Patch = {annotations_all, exclude}) ->
+	Patch;
+	
+coerce_object_patch_ok ({annotations_all, Operation, Annotations})
+			when (Operation =:= update) ->
+	{annotations_all, Operation, enforce_ok_1 (coerce_object_annotations (Annotations))};
+	
+coerce_object_patch_ok ({annotations_each, Operation, Annotations})
+			when (Operation =:= update); (Operation =:= include) ->
+	{annotations_each, Operation, enforce_ok_1 (coerce_object_annotations (Annotations))};
+	
+coerce_object_patch_ok ({annotations_each, Operation, Annotations})
+			when (Operation =:= exclude) ->
+	{annotations_each, Operation, enforce_ok_1 (coerce_identifiers (Annotations))};
+	
+coerce_object_patch_ok ({annotation, Operation, Annotation})
+			when (Operation =:= update); (Operation =:= include); (Operation =:= exclude) ->
+	coerce_object_patch_ok ({annotations_each, Operation, [Annotation]});
+	
+	% ----------------------------------------
+	
+coerce_object_patch_ok ({patches, Patches})
+			when is_list (Patches) ->
+	{patches, lists:map (fun coerce_object_patch_ok/1, Patches)}.
 
 
 %----------------------------------------------------------------------------
@@ -582,26 +985,28 @@ coerce_object_selector_ok ({collection, Collection}) ->
 	{collection, enforce_ok_1 (coerce_identifier (Collection))};
 	
 coerce_object_selector_ok ({index, Index, {equals, Value}}) ->
-	{index, enforce_ok_1 (coerce_identifier (Index)), {equals, Value}};
+	{index, enforce_ok_1 (coerce_identifier (Index)), {equals, enforce_ok_1 (coerce_object_index_value (Value))}};
 	
 coerce_object_selector_ok ({index, Index, {lesser, MaxValue}}) ->
 	coerce_object_selector_ok ({index, Index, {lesser, MaxValue, true}});
 	
-coerce_object_selector_ok ({index, Index, {lesser, MaxValue, MaxValueInclusive}}) ->
-	{index, enforce_ok_1 (coerce_identifier (Index)), {lesser, MaxValue, MaxValueInclusive}};
+coerce_object_selector_ok ({index, Index, {lesser, MaxValue, MaxValueInclusive}})
+			when is_boolean (MaxValueInclusive) ->
+	{index, enforce_ok_1 (coerce_identifier (Index)), {lesser, enforce_ok_1 (coerce_object_index_value (MaxValue)), MaxValueInclusive}};
 	
 coerce_object_selector_ok ({index, Index, {greater, MinValue}}) ->
 	coerce_object_selector_ok ({index, Index, {greater, MinValue, true}});
 	
-coerce_object_selector_ok ({index, Index, {greater, MinValue, MinValueInclusive}}) ->
-	{index, enforce_ok_1 (coerce_identifier (Index)), {greater, MinValue, MinValueInclusive}};
+coerce_object_selector_ok ({index, Index, {greater, MinValue, MinValueInclusive}})
+			when is_boolean (MinValueInclusive) ->
+	{index, enforce_ok_1 (coerce_identifier (Index)), {greater, enforce_ok_1 (coerce_object_index_value (MinValue)), MinValueInclusive}};
 	
 coerce_object_selector_ok ({index, Index, {range, MinValue, MaxValue}}) ->
 	coerce_object_selector_ok ({index, Index, {range, MinValue, true, MaxValue, true}});
 	
 coerce_object_selector_ok ({index, Index, {range, MinValue, MinValueInclusive, MaxValue, MaxValueInclusive}})
 			when is_boolean (MinValueInclusive), is_boolean (MaxValueInclusive) ->
-	{index, enforce_ok_1 (coerce_identifier (Index)), {range, MinValue, MinValueInclusive, MaxValue, MaxValueInclusive}}.
+	{index, enforce_ok_1 (coerce_identifier (Index)), {range, enforce_ok_1 (coerce_object_index_value (MinValue)), MinValueInclusive, enforce_ok_1 (coerce_object_index_value (MaxValue)), MaxValueInclusive}}.
 
 
 %----------------------------------------------------------------------------
@@ -793,10 +1198,14 @@ encode_json_object (Object) ->
 	encode_json_object (Object, true).
 
 
-encode_json_object (Object = #ms_os_object_v1{}, WithKey) ->
+encode_json_object (Object = #ms_os_object_v1{}, WithKey)
+			when is_boolean (WithKey) ->
 	try
 		Json = {struct, [
-				{<<"key">>, if WithKey -> enforce_ok_1 (encode_json_object_key (Object#ms_os_object_v1.key)); true -> null end},
+				{<<"key">>, if
+							WithKey -> enforce_ok_1 (encode_json_object_key (Object#ms_os_object_v1.key));
+							true -> null
+						end},
 				{<<"data">>, enforce_ok_1 (encode_json_object_data (Object#ms_os_object_v1.data))},
 				{<<"indices">>, enforce_ok_1 (encode_json_object_indices (Object#ms_os_object_v1.indices))},
 				{<<"links">>, enforce_ok_1 (encode_json_object_links (Object#ms_os_object_v1.links))},
@@ -807,10 +1216,10 @@ encode_json_object (Object = #ms_os_object_v1{}, WithKey) ->
 	catch throw : Error = {error, _} -> Error end.
 
 
-encode_json_objects (Objects)
-			when is_list (Objects) ->
+encode_json_objects (Entities)
+			when is_list (Entities) ->
 	try
-		{ok, enforce_ok_map (fun encode_json_object/1, Objects)}
+		{ok, enforce_ok_map (fun encode_json_object/1, Entities)}
 	catch throw : Error = {error, _} -> Error end.
 
 
@@ -863,7 +1272,7 @@ encode_json_object_indices (Indices)
 			when is_list (Indices) ->
 	try
 		Json = {struct, lists:map (
-				fun (#ms_os_object_index_v1{index = Index, values = Values}) ->
+				fun (#ms_os_object_index_v1{key = Index, values = Values}) ->
 					{
 							enforce_ok_1 (encode_json_identifier (Index)),
 							enforce_ok_1 (encode_json_object_index_values (Values))}
@@ -910,7 +1319,7 @@ encode_json_object_links (Links)
 			when is_list (Links) ->
 	try
 		Json = {struct, lists:map (
-				fun (#ms_os_object_link_v1{link = Link, references = References}) ->
+				fun (#ms_os_object_link_v1{key = Link, references = References}) ->
 					{
 							enforce_ok_1 (encode_json_identifier (Link)),
 							enforce_ok_1 (encode_json_object_link_references (References))}
@@ -1074,7 +1483,7 @@ encode_json_annotations (Annotations)
 			when is_list (Annotations) ->
 	try
 		Json = {struct, lists:map (
-				fun (#ms_os_annotation_v1{annotation = Annotation, value = Value}) ->
+				fun (#ms_os_annotation_v1{key = Annotation, value = Value}) ->
 					{
 							enforce_ok_1 (encode_json_identifier (Annotation)),
 							enforce_ok_1 (encode_json_annotation_value (Value))}
@@ -1137,21 +1546,15 @@ schema_term ({object, WithKey})
 			when is_boolean (WithKey) ->
 	Record = #ms_os_object_v1{
 			key = if
-					WithKey -> {schema, fun schema_term/1, object_key};
-					true -> {equals, none}
-			end,
-			data = {'orelse', [{equals, none}, {schema, fun schema_term/1, object_data}], invalid_object_data},
+						WithKey -> {schema, fun schema_term/1, object_key};
+						true -> {equals, none}
+				end,
+			data = {schema, fun schema_term/1, object_data},
 			indices = {schema, fun schema_term/1, object_indices},
 			links = {schema, fun schema_term/1, object_links},
 			attachments = {schema, fun schema_term/1, object_attachments},
-			annotations = {schema, fun schema_term/1, annotations, invalid_object_annotations}},
+			annotations = {schema, fun schema_term/1, object_annotations}},
 	{record, Record, invalid_object};
-	
-schema_term (object_with_key) ->
-	schema_term ({object, true});
-	
-schema_term (object_without_key) ->
-	schema_term ({object, false});
 	
 schema_term (object) ->
 	schema_term ({object, true});
@@ -1163,12 +1566,15 @@ schema_term (object_key) ->
 	{record, Record, invalid_object_key};
 	
 schema_term (object_data) ->
-	{schema, fun schema_term/1, data, invalid_object_data};
+	{'orelse', [
+				{equals, none},
+				{schema, fun schema_term/1, data, invalid_object_data}],
+			invalid_object_data};
 	
 schema_term (object_index) ->
 	Record = #ms_os_object_index_v1{
-			index = {schema, fun schema_term/1, identifier, invalid_object_index_identifier},
-			values = {list, {simple_term}, invalid_object_index_values}},
+			key = {schema, fun schema_term/1, identifier, invalid_object_index_key},
+			values = {list, {schema, fun schema_term/1, value}, invalid_object_index_values}},
 	{record, Record, invalid_object_index};
 	
 schema_term (object_indices) ->
@@ -1176,7 +1582,7 @@ schema_term (object_indices) ->
 	
 schema_term (object_link) ->
 	Record = #ms_os_object_link_v1{
-			link = {schema, fun schema_term/1, identifier, invalid_object_link_identifier},
+			key = {schema, fun schema_term/1, identifier, invalid_object_link_key},
 			references = {list, {schema, fun schema_term/1, object_key, invalid_object_link_reference}, invalid_object_link_references}},
 	{record, Record, invalid_object_link};
 	
@@ -1184,35 +1590,49 @@ schema_term (object_links) ->
 	{list, {schema, fun schema_term/1, object_link}, invalid_object_links};
 	
 schema_term (object_attachment) ->
-	Tuple = {
-			{schema, fun schema_term/1, identifier, invalid_object_attachment_identifier},
-			{schema, fun schema_term/1, attachment, invalid_object_attachment_attachment}},
-	{tuple, Tuple, invalid_object_attachment};
+	{schema, fun schema_term/1, attachment, invalid_object_attachment};
 	
 schema_term (object_attachments) ->
 	{list, {schema, fun schema_term/1, object_attachment}, invalid_object_attachments};
 	
+schema_term (object_annotation) ->
+	{schema, fun schema_term/1, annotation, invalid_object_annotation};
+	
+schema_term (object_annotations) ->
+	{schema, fun schema_term/1, annotations, invalid_object_annotations};
+	
 schema_term (data) ->
 	Record = #ms_os_data_v1{
 			type = {schema, fun schema_term/1, content_type, invalid_data_type},
-			data = {simple_term, invalid_data_data}},
+			data = {schema, fun schema_term/1, value, invalid_data_data}},
 	{record, Record, invalid_data};
 	
-schema_term (attachment) ->
+schema_term (attachments) ->
+	{list, {schema, fun schema_term/1, attachments}, invalid_attachments};
+	
+schema_term ({attachment, WithKey})
+			when is_boolean (WithKey) ->
 	Record = #ms_os_attachment_v1{
+			key = if
+						WithKey -> {schema, fun schema_term/1, identifier, invalid_attachment_key};
+						true -> {equals, none}
+				end,
 			type = {schema, fun schema_term/1, content_type, invalid_attachment_type},
 			size = {integer, {positive, false}, invalid_attachment_size},
 			fingerprint = {schema, fun schema_term/1, fingerprint, invalid_attachment_fingerprint},
 			annotations = {schema, fun schema_term/1, annotations, invalid_attachment_annotations}},
 	{record, Record, invalid_attachment};
 	
+schema_term (attachment) ->
+	schema_term ({attachment, true});
+	
 schema_term (annotations) ->
 	{list, {schema, fun schema_term/1, annotation}, invalid_annotations};
 	
 schema_term (annotation) ->
 	Record = #ms_os_annotation_v1{
-			annotation = {schema, fun schema_term/1, identifier, invalid_annotation_identifier},
-			value = {simple_term, invalid_annotation_value}},
+			key = {schema, fun schema_term/1, identifier, invalid_annotation_key},
+			value = {schema, fun schema_term/1, value, invalid_annotation_value}},
 	{record, Record, invalid_annotation};
 	
 schema_term (identifier) ->
@@ -1223,6 +1643,9 @@ schema_term (content_type) ->
 	
 schema_term (fingerprint) ->
 	{binary, invalid_fingerprint};
+	
+schema_term (value) ->
+	{simple_term};
 	
 schema_term (object_patch) ->
 	% FIXME: Implement this!
@@ -1242,33 +1665,31 @@ schema_term (object_mangler) ->
 
 
 -spec schema_json (
-		{object, boolean()} | object_with_key | object_without_key | object | objects
-				| object_key | object_data
-				| object_indices | object_index_values | object_index_value
-				| object_links | object_link_references | object_link_reference
-				| object_attachments | object_attachment
-				| object_annotations | object_annotation_value
-				| data | {data, none} | {data, identity} | {data, hex}
-				| attachment | annotations | annotation_value
-				| identifier | identifiers | content_type | fingerprint | value)
-	-> ve_json_coders:destructure_json_schema().
+		{object, boolean()} | object | objects
+			| object_key | object_data
+			| object_indices | object_index_values | object_index_value
+			| object_links | object_link_references | object_link_reference
+			| object_attachments | object_attachment
+			| object_annotations | object_annotation_value
+			| data | {data, none} | {data, identity} | {data, hex}
+			| {attachment, boolean()} | attachment | annotations | annotation_value
+			| identifier | identifiers | content_type | fingerprint | value
+) -> ve_json_coders:destructure_json_schema().
 
 
-schema_json ({object, WithKey}) ->
+schema_json ({object, WithKey})
+			when is_boolean (WithKey) ->
 	Record = #ms_os_object_v1{
-			key = if WithKey -> {<<"key">>, {schema, fun schema_json/1, object_key}}; true -> none end,
+			key = if
+						WithKey -> {<<"key">>, {schema, fun schema_json/1, object_key}};
+						true -> none
+					end,
 			data = {<<"data">>, {schema, fun schema_json/1, object_data}, none},
 			indices = {<<"indices">>, {schema, fun schema_json/1, object_indices}, []},
 			links = {<<"links">>, {schema, fun schema_json/1, object_links}, []},
 			attachments = {<<"attachments">>, {schema, fun schema_json/1, object_attachments}, []},
 			annotations = {<<"annotations">>, {schema, fun schema_json/1, object_annotations}, []}},
 	{object, attributes, Record, false};
-	
-schema_json (object_with_key) ->
-	schema_json ({object, true});
-	
-schema_json (object_without_key) ->
-	schema_json ({object, false});
 	
 schema_json (object) ->
 	schema_json ({object, true});
@@ -1322,14 +1743,19 @@ schema_json (object_link_reference) ->
 schema_json (object_attachments) ->
 	{'orelse', [
 			{equals, null, []},
-			{object, attributes_map, tuple,
-					{schema, fun schema_json/1, identifier},
-					{schema, fun schema_json/1, object_attachment}}]};
+			{compose, [
+					{object, attributes_map, tuple,
+							{schema, fun schema_json/1, identifier},
+							{schema, fun schema_json/1, object_attachment}},
+					{transform,
+							fun ({Key, Attachment}) ->
+								Attachment#ms_os_attachment_v1{key = Key}
+							end}]}]};
 	
 schema_json (object_attachment) ->
 	{'orelse', [
 			{equals, null, none},
-			{schema, fun schema_json/1, attachment}]};
+			{schema, fun schema_json/1, {attachment, false}}]};
 	
 schema_json (object_annotations) ->
 	{'orelse', [
@@ -1382,13 +1808,21 @@ schema_json ({data, hex}) ->
 		end,
 	{transform_ok, Transformer};
 	
-schema_json (attachment) ->
+schema_json ({attachment, WithKey})
+			when is_boolean (WithKey) ->
 	Record = #ms_os_attachment_v1{
+			key = if
+						WithKey -> {<<"key">>, {schema, fun schema_json/1, identifier}};
+						true -> none
+					end,
 			type = {<<"content-type">>, {schema, fun schema_json/1, content_type}},
 			size = {<<"content-length">>, {integer}},
 			fingerprint = {<<"fingerprint">>, {schema, fun schema_json/1, fingerprint}},
 			annotations = {<<"annotations">>, {'orelse', [{equals, null, []}, {schema, fun schema_json/1, annotations}]}, []}},
 	{object, attributes, Record, false};
+	
+schema_json (attachment) ->
+	schema_json ({attachment, true});
 	
 schema_json (annotations) ->
 	{object, attributes_map, {record, ms_os_annotation_v1},
