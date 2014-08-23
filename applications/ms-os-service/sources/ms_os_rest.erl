@@ -197,9 +197,9 @@ rest_accept_content (ContentType, Rest, Request, State) ->
 			
 			{{object}, {json, utf8}} ->
 				Object = enforce_ok_1 (ms_os_coders:decode_json_object (Content, false)),
-				{ObjectKey, Exists} = Rest ({cache, object_key_and_exists}),
+				{ObjectKey, ObjectExists} = Rest ({cache, object_key_and_exists}),
 				if
-					Exists ->
+					ObjectExists ->
 						enforce_ok (ms_os_api:object_update (ObjectKey, Object));
 					true ->
 						enforce_ok (ms_os_api:object_create (ObjectKey, Object))
@@ -207,9 +207,9 @@ rest_accept_content (ContentType, Rest, Request, State) ->
 				{ok, true, Request_2};
 			
 			{{object, data}, ContentType} ->
-				{ObjectKey, Exists} = Rest ({cache, object_key_and_exists}),
+				{ObjectKey, ObjectExists} = Rest ({cache, object_key_and_exists}),
 				if
-					Exists ->
+					ObjectExists ->
 						enforce_ok (ms_os_api:object_update_data (ObjectKey, ContentType, Content));
 					true ->
 						enforce_ok (ms_os_api:object_create_data (ObjectKey, ContentType, Content))
@@ -218,10 +218,10 @@ rest_accept_content (ContentType, Rest, Request, State) ->
 			
 			{{object, indices}, {json, utf8}} ->
 				Indices = enforce_ok_1 (ms_os_coders:decode_json_object_indices (Content)),
-				{ObjectKey, Exists} = Rest ({cache, object_key_and_exists}),
+				{ObjectKey, ObjectExists} = Rest ({cache, object_key_and_exists}),
 				if
-					Exists ->
-						enforce_ok (ms_os_api:object_patch (ObjectKey, indices, update, Indices)),
+					ObjectExists ->
+						enforce_ok (ms_os_api:object_patch (ObjectKey, {indices_all, update, Indices})),
 						{ok, true, Request_2};
 					true ->
 						{ok, false, Request_2}
@@ -229,22 +229,29 @@ rest_accept_content (ContentType, Rest, Request, State) ->
 			
 			{{object, index}, {json, utf8}} ->
 				IndexValues = enforce_ok_1 (ms_os_coders:decode_json_object_index_values (Content)),
-				{ObjectKey, Exists} = Rest ({cache, object_key_and_exists}),
+				{ObjectKey, ObjectExists} = Rest ({cache, object_key_and_exists}),
 				if
-					Exists ->
+					ObjectExists ->
 						IndexKey = Rest ({cache, object_index_key}),
-						enforce_ok (ms_os_api:object_patch (ObjectKey, index_values, update, {IndexKey, IndexValues})),
-						{ok, true, Request_2};
+						IndexExists = (Rest ({cache, object_index}) =/= missing),
+						if
+							IndexExists ->
+								enforce_ok (ms_os_api:object_patch (ObjectKey, {index, update, {IndexKey, IndexValues}})),
+								{ok, true, Request_2};
+							true ->
+								enforce_ok (ms_os_api:object_patch (ObjectKey, {index, include, {IndexKey, IndexValues}})),
+								{ok, true, Request_2}
+						end;
 					true ->
 						{ok, false, Request_2}
 				end;
 			
 			{{object, links}, {json, utf8}} ->
 				Links = enforce_ok_1 (ms_os_coders:decode_json_object_links (Content)),
-				{ObjectKey, Exists} = Rest ({cache, object_key_and_exists}),
+				{ObjectKey, ObjectExists} = Rest ({cache, object_key_and_exists}),
 				if
-					Exists ->
-						enforce_ok (ms_os_api:object_patch (ObjectKey, links, update, Links)),
+					ObjectExists ->
+						enforce_ok (ms_os_api:object_patch (ObjectKey, {links_all, update, Links})),
 						{ok, true, Request_2};
 					true ->
 						{ok, false, Request_2}
@@ -252,83 +259,131 @@ rest_accept_content (ContentType, Rest, Request, State) ->
 			
 			{{object, link}, {json, utf8}} ->
 				LinkReferences = enforce_ok_1 (ms_os_coders:decode_json_object_link_references (Content)),
-				{ObjectKey, Exists} = Rest ({cache, object_key_and_exists}),
+				{ObjectKey, ObjectExists} = Rest ({cache, object_key_and_exists}),
 				if
-					Exists ->
+					ObjectExists ->
 						LinkKey = Rest ({cache, object_link_key}),
-						enforce_ok (ms_os_api:object_patch (ObjectKey, link_references, update, {LinkKey, LinkReferences})),
-						{ok, true, Request_2};
+						LinkExists = (Rest ({cache, object_link}) =/= missing),
+						if
+							LinkExists ->
+								enforce_ok (ms_os_api:object_patch (ObjectKey, {link, update, {LinkKey, LinkReferences}})),
+								{ok, true, Request_2};
+							true ->
+								enforce_ok (ms_os_api:object_patch (ObjectKey, {link, include, {LinkKey, LinkReferences}})),
+								{ok, true, Request_2}
+						end;
 					true ->
 						{ok, false, Request_2}
 				end;
 			
 			{{object, link, reference}, {json, utf8}} ->
 				LinkReference = enforce_ok_1 (ms_os_coders:decode_json_object_link_reference (Content)),
-				{ObjectKey, Exists} = Rest ({cache, object_key_and_exists}),
+				{ObjectKey, ObjectExists} = Rest ({cache, object_key_and_exists}),
 				if
-					Exists ->
+					ObjectExists ->
 						LinkKey = Rest ({cache, object_link_key}),
-						LinkReferenceKey = Rest ({cache, object_link_reference_key}),
-						enforce_ok (ms_os_api:object_patch (ObjectKey, link_reference, update, {LinkKey, LinkReferenceKey, LinkReference})),
-						{ok, true, Request_2};
+						LinkExists = (Rest ({cache, object_link}) =/= missing),
+						if
+							LinkExists ->
+								LinkReferenceExists = (Rest ({cache, object_link_reference}) =/= missing),
+								if
+									LinkReferenceExists ->
+										enforce_ok (ms_os_api:object_patch (ObjectKey,
+												{patches, [
+														{link_reference, exclude, LinkKey, Rest ({cache, object_link_reference})},
+														{link_reference, include, LinkKey, LinkReference}]})),
+										{ok, true, Request_2};
+									true ->
+										{ok, false, Request_2}
+								end;
+							true ->
+								{ok, false, Request_2}
+						end;
 					true ->
 						{ok, false, Request_2}
 				end;
 			
 			{{object, attachments}, {json, utf8}} ->
 				Attachments = enforce_ok_1 (ms_os_coders:decode_json_object_attachments (Content)),
-				{ObjectKey, Exists} = Rest ({cache, object_key_and_exists}),
+				{ObjectKey, ObjectExists} = Rest ({cache, object_key_and_exists}),
 				if
-					Exists ->
-						enforce_ok (ms_os_api:object_patch (ObjectKey, attachments, update, Attachments)),
+					ObjectExists ->
+						enforce_ok (ms_os_api:object_patch (ObjectKey, {attachments_all, update, Attachments})),
 						{ok, true, Request_2};
 					true ->
 						{ok, false, Request_2}
 				end;
 			
 			{{object, attachment}, {json, utf8}} ->
-				Attachment = enforce_ok_1 (ms_os_coders:decode_json_object_attachment (Content)),
-				{ObjectKey, Exists} = Rest ({cache, object_key_and_exists}),
+				Attachment_0 = enforce_ok_1 (ms_os_coders:decode_json_object_attachment (Content, true)),
+				{ObjectKey, ObjectExists} = Rest ({cache, object_key_and_exists}),
 				if
-					Exists ->
+					ObjectExists ->
 						AttachmentKey = Rest ({cache, object_attachment_key}),
-						enforce_ok (ms_os_api:object_patch (ObjectKey, attachment, update, {AttachmentKey, Attachment})),
-						{ok, true, Request_2};
+						AttachmentExists = (Rest ({cache, object_attachment}) =/= missing),
+						Attachment = Attachment_0#ms_os_attachment_v1{key = AttachmentKey},
+						if
+							AttachmentExists ->
+								enforce_ok (ms_os_api:object_patch (ObjectKey, {attachment, update, Attachment})),
+								{ok, true, Request_2};
+							true ->
+								enforce_ok (ms_os_api:object_patch (ObjectKey, {attachment, include, Attachment})),
+								{ok, true, Request_2}
+						end;
 					true ->
 						{ok, false, Request_2}
 				end;
 			
 			{{object, attachment, annotations}, {json, utf8}} ->
 				Annotations = enforce_ok_1 (ms_os_coders:decode_json_object_annotations (Content)),
-				{ObjectKey, Exists} = Rest ({cache, object_key_and_exists}),
+				{ObjectKey, ObjectExists} = Rest ({cache, object_key_and_exists}),
 				if
-					Exists ->
+					ObjectExists ->
 						AttachmentKey = Rest ({cache, object_attachment_key}),
-						enforce_ok (ms_os_api:object_patch (ObjectKey, attachment, update_annotations, {AttachmentKey, Annotations})),
-						{ok, true, Request_2};
+						AttachmentExists = (Rest ({cache, object_attachment}) =/= missing),
+						if
+							AttachmentExists ->
+								enforce_ok (ms_os_api:object_patch (ObjectKey, {attachment_annotations_all, update, AttachmentKey, Annotations})),
+								{ok, true, Request_2};
+							true ->
+								{ok, false, Request_2}
+						end;
 					true ->
 						{ok, false, Request_2}
 				end;
 			
 			{{object, attachment, annotation}, {json, utf8}} ->
 				AnnotationValue = enforce_ok_1 (ms_os_coders:decode_json_object_annotation_value (Content)),
-				{ObjectKey, Exists} = Rest ({cache, object_key_and_exists}),
+				{ObjectKey, ObjectExists} = Rest ({cache, object_key_and_exists}),
 				if
-					Exists ->
+					ObjectExists ->
 						AttachmentKey = Rest ({cache, object_attachment_key}),
-						AnnotationKey = Rest ({cache, object_attachment_annotation_key}),
-						enforce_ok (ms_os_api:object_patch (ObjectKey, attachment, update_annotation, {AttachmentKey, AnnotationKey, AnnotationValue})),
-						{ok, true, Request_2};
+						AttachmentExists = (Rest ({cache, object_attachment}) =/= missing),
+						if
+							AttachmentExists ->
+								AnnotationKey = Rest ({cache, object_attachment_annotation_key}),
+								AnnotationExists = (Rest ({cache, object_attachment_annotation}) =/= missing),
+								if
+									AnnotationExists ->
+										enforce_ok (ms_os_api:object_patch (ObjectKey, attachment_annotation, update, {AttachmentKey, AnnotationKey, AnnotationValue})),
+										{ok, true, Request_2};
+									true ->
+										enforce_ok (ms_os_api:object_patch (ObjectKey, attachment_annotation, include, {AttachmentKey, AnnotationKey, AnnotationValue})),
+										{ok, true, Request_2}
+								end;
+							true ->
+								{ok, false, Request_2}
+						end;
 					true ->
 						{ok, false, Request_2}
 				end;
 			
 			{{object, annotations}, {json, utf8}} ->
 				Annotations = enforce_ok_1 (ms_os_coders:decode_json_object_annotations (Content)),
-				{ObjectKey, Exists} = Rest ({cache, object_key_and_exists}),
+				{ObjectKey, ObjectExists} = Rest ({cache, object_key_and_exists}),
 				if
-					Exists ->
-						enforce_ok (ms_os_api:object_patch (ObjectKey, annotations, update, Annotations)),
+					ObjectExists ->
+						enforce_ok (ms_os_api:object_patch (ObjectKey, {annotations, update, Annotations})),
 						{ok, true, Request_2};
 					true ->
 						{ok, false, Request_2}
@@ -336,12 +391,19 @@ rest_accept_content (ContentType, Rest, Request, State) ->
 			
 			{{object, annotation}, {json, utf8}} ->
 				AnnotationValue = enforce_ok_1 (ms_os_coders:decode_json_object_annotation_value (Content)),
-				{ObjectKey, Exists} = Rest ({cache, object_key_and_exists}),
+				{ObjectKey, ObjectExists} = Rest ({cache, object_key_and_exists}),
 				if
-					Exists ->
+					ObjectExists ->
 						AnnotationKey = Rest ({cache, object_annotation_key}),
-						enforce_ok (ms_os_api:object_patch (ObjectKey, annotation, update, {AnnotationKey, AnnotationValue})),
-						{ok, true, Request_2};
+						AnnotationExists = (Rest ({cache, object_annotation}) =/= missing),
+						if
+							AnnotationExists ->
+								enforce_ok (ms_os_api:object_patch (ObjectKey, {annotation, update, {AnnotationKey, AnnotationValue}})),
+								{ok, true, Request_2};
+							true ->
+								enforce_ok (ms_os_api:object_patch (ObjectKey, {annotation, include, {AnnotationKey, AnnotationValue}})),
+								{ok, true, Request_2}
+						end;
 					true ->
 						{ok, false, Request_2}
 				end;
