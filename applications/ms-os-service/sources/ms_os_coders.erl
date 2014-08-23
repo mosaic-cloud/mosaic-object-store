@@ -46,30 +46,32 @@
 		validate_object_mangler/1]).
 
 -export ([
-		decode_json_object/1, decode_json_object/2,
+		decode_json_object/1, decode_json_object/2, decode_json_objects/1,
 		decode_json_object_key/1,
 		decode_json_object_data/1,
-		decode_json_object_indices/1,
-		decode_json_object_links/1,
-		decode_json_object_attachments/1,
+		decode_json_object_indices/1, decode_json_object_index_values/1, decode_json_object_index_value/1,
+		decode_json_object_links/1, decode_json_object_link_references/1, decode_json_object_link_reference/1,
+		decode_json_object_attachments/1, decode_json_object_attachment/1,
+		decode_json_object_annotations/1, decode_json_object_annotation_value/1,
 		decode_json_data/1,
 		decode_json_attachment/1,
-		decode_json_annotations/1,
-		decode_json_identifier/1,
+		decode_json_annotations/1, decode_json_annotation_value/1,
+		decode_json_identifier/1, decode_json_identifiers/1,
 		decode_json_content_type/1,
 		decode_json_fingerprint/1]).
 
 -export ([
-		encode_json_object/1, encode_json_object/2,
+		encode_json_object/1, encode_json_object/2, encode_json_objects/1,
 		encode_json_object_key/1,
 		encode_json_object_data/1,
-		encode_json_object_indices/1, encode_json_object_index/1,
-		encode_json_object_links/1, encode_json_object_link/1,
+		encode_json_object_indices/1, encode_json_object_index_values/1, encode_json_object_index_value/1,
+		encode_json_object_links/1, encode_json_object_link_references/1, encode_json_object_link_reference/1,
 		encode_json_object_attachments/1, encode_json_object_attachment/1,
+		encode_json_object_annotations/1, encode_json_object_annotation_value/1,
 		encode_json_data/1,
 		encode_json_attachment/1,
-		encode_json_annotations/1, encode_json_annotation/1,
-		encode_json_identifier/1,
+		encode_json_annotations/1, encode_json_annotation_value/1,
+		encode_json_identifier/1, encode_json_identifiers/1,
 		encode_json_content_type/1,
 		encode_json_fingerprint/1]).
 
@@ -712,6 +714,10 @@ decode_json_object (Json) ->
 decode_json_object (Json, WithKey) ->
 	decode_json_entity (Json, {object, WithKey}).
 
+decode_json_objects (Json) ->
+	decode_json_entity (Json, objects).
+
+
 decode_json_object_key (Json) ->
 	decode_json_entity (Json, object_key).
 
@@ -721,11 +727,32 @@ decode_json_object_data (Json) ->
 decode_json_object_indices (Json) ->
 	decode_json_entity (Json, object_indices).
 
+decode_json_object_index_values (Json) ->
+	decode_json_entity (Json, object_index_values).
+
+decode_json_object_index_value (Json) ->
+	decode_json_entity (Json, object_index_value).
+
 decode_json_object_links (Json) ->
 	decode_json_entity (Json, object_links).
 
+decode_json_object_link_references (Json) ->
+	decode_json_entity (Json, object_link_references).
+
+decode_json_object_link_reference (Json) ->
+	decode_json_entity (Json, object_link_reference).
+
 decode_json_object_attachments (Json) ->
 	decode_json_entity (Json, object_attachments).
+
+decode_json_object_attachment (Json) ->
+	decode_json_entity (Json, object_attachment).
+
+decode_json_object_annotations (Json) ->
+	decode_json_entity (Json, object_annotations).
+
+decode_json_object_annotation_value (Json) ->
+	decode_json_entity (Json, object_annotation_value).
 
 
 decode_json_data (Json) ->
@@ -737,9 +764,15 @@ decode_json_attachment (Json) ->
 decode_json_annotations (Json) ->
 	decode_json_entity (Json, annotations).
 
+decode_json_annotation_value (Json) ->
+	decode_json_entity (Json, annotation_value).
+
 
 decode_json_identifier (Json) ->
 	decode_json_entity (Json, identifier).
+
+decode_json_identifiers (Json) ->
+	decode_json_entity (Json, identifiers).
 
 decode_json_content_type (Json) ->
 	decode_json_entity (Json, content_type).
@@ -760,22 +793,33 @@ encode_json_object (Object) ->
 	encode_json_object (Object, true).
 
 
-encode_json_object (Object = #ms_os_object_v1{}, _WithKey) ->
+encode_json_object (Object = #ms_os_object_v1{}, WithKey) ->
 	try
 		Json = {struct, [
-				{<<"key">>, enforce_ok_1 (encode_json_object_key (Object#ms_os_object_v1.key))},
+				{<<"key">>, if WithKey -> enforce_ok_1 (encode_json_object_key (Object#ms_os_object_v1.key)); true -> null end},
 				{<<"data">>, enforce_ok_1 (encode_json_object_data (Object#ms_os_object_v1.data))},
 				{<<"indices">>, enforce_ok_1 (encode_json_object_indices (Object#ms_os_object_v1.indices))},
 				{<<"links">>, enforce_ok_1 (encode_json_object_links (Object#ms_os_object_v1.links))},
 				{<<"attachments">>, enforce_ok_1 (encode_json_object_attachments (Object#ms_os_object_v1.attachments))},
-				{<<"annotations">>, enforce_ok_1 (encode_json_annotations (Object#ms_os_object_v1.annotations))}]},
-		{ok, Json}
+				{<<"annotations">>, enforce_ok_1 (encode_json_object_annotations (Object#ms_os_object_v1.annotations))}]},
+		Json_2 = enforce_ok_1 (ve_json_coders:simplify_json (Json, {struct, exclude_null_attributes})),
+		{ok, Json_2}
+	catch throw : Error = {error, _} -> Error end.
+
+
+encode_json_objects (Objects)
+			when is_list (Objects) ->
+	try
+		{ok, enforce_ok_map (fun encode_json_object/1, Objects)}
 	catch throw : Error = {error, _} -> Error end.
 
 
 %----------------------------------------------------------------------------
 
 
+encode_json_object_key (none) ->
+	{ok, null};
+	
 encode_json_object_key (Key = #ms_os_object_key_v1{}) ->
 	try
 		Json = {struct, [
@@ -784,23 +828,37 @@ encode_json_object_key (Key = #ms_os_object_key_v1{}) ->
 		{ok, Json}
 	catch throw : Error = {error, _} -> Error end;
 	
-encode_json_object_key (none) ->
-	{ok, null}.
+encode_json_object_key (#ms_os_object_v1{key = Key}) ->
+	encode_json_object_key (Key).
 
 
 %----------------------------------------------------------------------------
 
 
-encode_json_object_data (Data = #ms_os_data_v1{}) ->
-	encode_json_data (Data);
-	
 encode_json_object_data (none) ->
-	{ok, null}.
+	{ok, null};
+	
+encode_json_object_data (Data = #ms_os_data_v1{}) ->
+	case encode_json_data (Data) of
+		{ok, Json} ->
+			ve_json_coders:simplify_json (Json, {struct, exclude_null_attributes});
+		Error = {error, _} ->
+			Error
+	end;
+	
+encode_json_object_data (#ms_os_object_v1{data = Data}) ->
+	encode_json_object_data (Data).
 
 
 %----------------------------------------------------------------------------
 
 
+encode_json_object_indices ([]) ->
+	{ok, null};
+	
+encode_json_object_indices (none) ->
+	{ok, null};
+	
 encode_json_object_indices (Indices)
 			when is_list (Indices) ->
 	try
@@ -808,27 +866,46 @@ encode_json_object_indices (Indices)
 				fun (#ms_os_object_index_v1{index = Index, values = Values}) ->
 					{
 							enforce_ok_1 (encode_json_identifier (Index)),
-							enforce_ok_map (fun encode_json_object_index_value/1, Values)}
+							enforce_ok_1 (encode_json_object_index_values (Values))}
 				end,
 				Indices)},
 		{ok, Json}
-	catch throw : Error = {error, _} -> Error end.
+	catch throw : Error = {error, _} -> Error end;
+	
+encode_json_object_indices (#ms_os_object_v1{indices = Indices}) ->
+	encode_json_object_indices (Indices).
 
 
-encode_json_object_index (#ms_os_object_index_v1{values = Values}) ->
+encode_json_object_index_values ([]) ->
+	{ok, null};
+	
+encode_json_object_index_values (none) ->
+	{ok, null};
+	
+encode_json_object_index_values (Values)
+			when is_list (Values) ->
 	try
 		Json = enforce_ok_map (fun encode_json_object_index_value/1, Values),
 		{ok, Json}
-	catch throw : Error = {error, _} -> Error end.
+	catch throw : Error = {error, _} -> Error end;
+	
+encode_json_object_index_values (#ms_os_object_index_v1{values = Values}) ->
+	encode_json_object_index_values (Values).
 
 
 encode_json_object_index_value (Value) ->
-	{ok, Value}.
+	encode_json_value (Value).
 
 
 %----------------------------------------------------------------------------
 
 
+encode_json_object_links ([]) ->
+	{ok, null};
+	
+encode_json_object_links (none) ->
+	{ok, null};
+	
 encode_json_object_links (Links)
 			when is_list (Links) ->
 	try
@@ -836,23 +913,46 @@ encode_json_object_links (Links)
 				fun (#ms_os_object_link_v1{link = Link, references = References}) ->
 					{
 							enforce_ok_1 (encode_json_identifier (Link)),
-							enforce_ok_map (fun encode_json_object_key/1, References)}
+							enforce_ok_1 (encode_json_object_link_references (References))}
 				end,
 				Links)},
 		{ok, Json}
-	catch throw : Error = {error, _} -> Error end.
+	catch throw : Error = {error, _} -> Error end;
+	
+encode_json_object_links (#ms_os_object_v1{links = Links}) ->
+	encode_json_object_links (Links).
 
 
-encode_json_object_link (#ms_os_object_link_v1{references = References}) ->
+encode_json_object_link_references ([]) ->
+	{ok, null};
+	
+encode_json_object_link_references (none) ->
+	{ok, null};
+	
+encode_json_object_link_references (References)
+			when is_list (References) ->
 	try
-		Json = enforce_ok_map (fun encode_json_object_key/1, References),
+		Json = enforce_ok_map (fun encode_json_object_link_reference/1, References),
 		{ok, Json}
-	catch throw : Error = {error, _} -> Error end.
+	catch throw : Error = {error, _} -> Error end;
+	
+encode_json_object_link_references (#ms_os_object_link_v1{references = References}) ->
+	encode_json_object_link_references (References).
+
+
+encode_json_object_link_reference (Reference) ->
+	encode_json_object_key (Reference).
 
 
 %----------------------------------------------------------------------------
 
 
+encode_json_object_attachments ([]) ->
+	{ok, null};
+	
+encode_json_object_attachments (none) ->
+	{ok, null};
+	
 encode_json_object_attachments (Attachments)
 			when is_list (Attachments) ->
 	try
@@ -860,15 +960,44 @@ encode_json_object_attachments (Attachments)
 				fun ({Identifier, Attachment}) ->
 					{
 							enforce_ok_1 (encode_json_identifier (Identifier)),
-							enforce_ok_1 (encode_json_attachment (Attachment))}
+							enforce_ok_1 (encode_json_object_attachment (Attachment))}
 				end,
 				Attachments)},
 		{ok, Json}
-	catch throw : Error = {error, _} -> Error end.
+	catch throw : Error = {error, _} -> Error end;
+	
+encode_json_object_attachments (#ms_os_object_v1{attachments = Attachments}) ->
+	encode_json_object_attachments (Attachments).
 
 
 encode_json_object_attachment (Attachment) ->
-	encode_json_attachment (Attachment).
+	case encode_json_attachment (Attachment) of
+		{ok, Json} ->
+			ve_json_coders:simplify_json (Json, {struct, exclude_null_attributes});
+		Error = {error, _} ->
+			Error
+	end.
+
+
+%----------------------------------------------------------------------------
+
+
+encode_json_object_annotations ([]) ->
+	{ok, null};
+	
+encode_json_object_annotations (none) ->
+	{ok, null};
+	
+encode_json_object_annotations (Annotations)
+			when is_list (Annotations) ->
+	encode_json_annotations (Annotations);
+	
+encode_json_object_annotations (#ms_os_object_v1{annotations = Annotations}) ->
+	encode_json_object_annotations (Annotations).
+
+
+encode_json_object_annotation_value (Annotation) ->
+	encode_json_annotation_value (Annotation).
 
 
 %----------------------------------------------------------------------------
@@ -933,7 +1062,8 @@ encode_json_attachment (Attachment = #ms_os_attachment_v1{}) ->
 				{<<"content-length">>, Attachment#ms_os_attachment_v1.size},
 				{<<"fingerprint">>, enforce_ok_1 (encode_json_fingerprint (Attachment#ms_os_attachment_v1.fingerprint))},
 				{<<"annotations">>, enforce_ok_1 (encode_json_annotations (Attachment#ms_os_attachment_v1.annotations))}]},
-		{ok, Json}
+		Json_2 = enforce_ok_1 (ve_json_coders:simplify_json (Json, {struct, exclude_null_attributes})),
+		{ok, Json_2}
 	catch throw : Error = {error, _} -> Error end.
 
 
@@ -950,19 +1080,19 @@ encode_json_annotations (Annotations)
 							enforce_ok_1 (encode_json_annotation_value (Value))}
 				end,
 				Annotations)},
+		Json_2 = enforce_ok_1 (ve_json_coders:simplify_json (Json, {struct, exclude_null_attributes})),
 		{ok, Json}
 	catch throw : Error = {error, _} -> Error end.
 
 
-encode_json_annotation (#ms_os_annotation_v1{value = Value}) ->
+encode_json_annotation_value (#ms_os_annotation_v1{value = Value}) ->
 	try
 		Json = enforce_ok_1 (encode_json_annotation_value (Value)),
 		{ok, Json}
-	catch throw : Error = {error, _} -> Error end.
-
-
+	catch throw : Error = {error, _} -> Error end;
+	
 encode_json_annotation_value (Value) ->
-	{ok, Value}.
+	encode_json_value (Value).
 
 
 %----------------------------------------------------------------------------
@@ -971,6 +1101,13 @@ encode_json_annotation_value (Value) ->
 encode_json_identifier (Identifier)
 			when is_binary (Identifier) ->
 	{ok, Identifier}.
+
+encode_json_identifiers (Identifiers)
+			when is_list (Identifiers) ->
+	try
+		Json = enforce_ok_map (fun encode_json_identifier/1, Identifiers),
+		{ok, Json}
+	catch throw : Error = {error, _} -> Error end.
 
 
 encode_json_content_type (ContentType)
@@ -981,6 +1118,15 @@ encode_json_content_type (ContentType)
 encode_json_fingerprint (Fingerprint)
 			when is_binary (Fingerprint) ->
 	{ok, Fingerprint}.
+
+
+encode_json_value (Value) ->
+	case ve_json_coders:validate_json (Value) of
+		ok ->
+			{ok, Value};
+		Error = {error, _} ->
+			Error
+	end.
 
 
 %----------------------------------------------------------------------------
@@ -1096,20 +1242,26 @@ schema_term (object_mangler) ->
 
 
 -spec schema_json (
-		{object, boolean()} | object_with_key | object_without_key | object
-				| object_key | object_data | object_indices | object_links | object_attachments
-				| data | attachment | annotations | identifier | content_type | fingerprint)
+		{object, boolean()} | object_with_key | object_without_key | object | objects
+				| object_key | object_data
+				| object_indices | object_index_values | object_index_value
+				| object_links | object_link_references | object_link_reference
+				| object_attachments | object_attachment
+				| object_annotations | object_annotation_value
+				| data | {data, none} | {data, identity} | {data, hex}
+				| attachment | annotations | annotation_value
+				| identifier | identifiers | content_type | fingerprint | value)
 	-> ve_json_coders:destructure_json_schema().
 
 
 schema_json ({object, WithKey}) ->
 	Record = #ms_os_object_v1{
 			key = if WithKey -> {<<"key">>, {schema, fun schema_json/1, object_key}}; true -> none end,
-			data = {<<"data">>, {'orelse', [{equals, null, none}, {schema, fun schema_json/1, object_data}]}, none},
-			indices = {<<"indices">>, {'orelse', [{equals, null, []}, {schema, fun schema_json/1, object_indices}]}, []},
-			links = {<<"links">>, {'orelse', [{equals, null, []}, {schema, fun schema_json/1, object_links}]}, []},
-			attachments = {<<"attachments">>, {'orelse', [{equals, null, []}, {schema, fun schema_json/1, object_attachments}]}, []},
-			annotations = {<<"annotations">>, {'orelse', [{equals, null, []}, {schema, fun schema_json/1, annotations}]}, []}},
+			data = {<<"data">>, {schema, fun schema_json/1, object_data}, none},
+			indices = {<<"indices">>, {schema, fun schema_json/1, object_indices}, []},
+			links = {<<"links">>, {schema, fun schema_json/1, object_links}, []},
+			attachments = {<<"attachments">>, {schema, fun schema_json/1, object_attachments}, []},
+			annotations = {<<"annotations">>, {schema, fun schema_json/1, object_annotations}, []}},
 	{object, attributes, Record, false};
 	
 schema_json (object_with_key) ->
@@ -1121,6 +1273,9 @@ schema_json (object_without_key) ->
 schema_json (object) ->
 	schema_json ({object, true});
 	
+schema_json (objects) ->
+	{list, {schema, fun schema_json/1, {object, true}}};
+	
 schema_json (object_key) ->
 	Record = #ms_os_object_key_v1{
 			collection = {<<"collection">>, {schema, fun schema_json/1, identifier}},
@@ -1128,62 +1283,104 @@ schema_json (object_key) ->
 	{object, attributes, Record, false};
 	
 schema_json (object_data) ->
-	schema_json (data);
+	{'orelse', [
+			{equals, null, none},
+			{schema, fun schema_json/1, data}]};
 	
 schema_json (object_indices) ->
-	{object, attributes_map, {record, ms_os_object_index_v1}, {schema, fun schema_json/1, identifier},
-			{'orelse', [{equals, null, []}, {list, {json}}]}};
+	{'orelse', [
+			{equals, null, []},
+			{object, attributes_map, {record, ms_os_object_index_v1},
+					{schema, fun schema_json/1, identifier},
+					{schema, fun schema_json/1, object_index_values}}]};
+	
+schema_json (object_index_values) ->
+	{'orelse', [
+			{equals, null, []},
+			{list, {schema, fun schema_json/1, object_index_value}}]};
+	
+schema_json (object_index_value) ->
+	schema_json (value);
 	
 schema_json (object_links) ->
-	{object, attributes_map, {record, ms_os_object_link_v1}, {schema, fun schema_json/1, identifier},
-			{'orelse', [{equals, null, []}, {list, {schema, fun schema_json/1, object_key}}]}};
+	{'orelse', [
+			{equals, null, []},
+			{object, attributes_map, {record, ms_os_object_link_v1},
+					{schema, fun schema_json/1, identifier},
+					{schema, fun schema_json/1, object_link_references}}]};
+	
+schema_json (object_link_references) ->
+	{'orelse', [
+			{equals, null, []},
+			{list, {schema, fun schema_json/1, object_link_reference}}]};
+	
+schema_json (object_link_reference) ->
+	{'orelse', [
+			{equals, null, none},
+			{schema, fun schema_json/1, object_key}]};
 	
 schema_json (object_attachments) ->
-	{object, attributes_map, tuple, {schema, fun schema_json/1, identifier},
-			{'orelse', [{equals, null, none}, {schema, fun schema_json/1, attachment}]}};
+	{'orelse', [
+			{equals, null, []},
+			{object, attributes_map, tuple,
+					{schema, fun schema_json/1, identifier},
+					{schema, fun schema_json/1, object_attachment}}]};
+	
+schema_json (object_attachment) ->
+	{'orelse', [
+			{equals, null, none},
+			{schema, fun schema_json/1, attachment}]};
+	
+schema_json (object_annotations) ->
+	{'orelse', [
+			{equals, null, []},
+			{schema, fun schema_json/1, annotations}]};
+	
+schema_json (object_annotation_value) ->
+	schema_json (annotation_value);
 	
 schema_json (data) ->
 	{'orelse', [
 			{schema, fun schema_json/1, {data, none}},
 			{schema, fun schema_json/1, {data, identity}},
-			{schema, fun schema_json/1, {data, base64}}]};
+			{schema, fun schema_json/1, {data, hex}}]};
 	
 schema_json ({data, none}) ->
 	Record = #ms_os_data_v1{
 			type = {<<"content-type">>, {schema, fun schema_json/1, content_type}},
-			data = {<<"content">>, {json}}},
+			data = {<<"content">>, {schema, fun schema_json/1, value}}},
 	{object, attributes, Record, false};
 	
 schema_json ({data, identity}) ->
-	{transform_ok,
-			fun (Json) ->
-				case ve_json_coders:destructure_json (Json, {object, attribute, <<"transfer-encoding">>, {string}}) of
-					{ok, <<"identity">>} ->
-						Record = #ms_os_data_v1{
-								type = {<<"content-type">>, {schema, fun schema_json/1, content_type}},
-								data = {<<"content">>, {json}}},
-						% FIXME: Check for other extra attributes!
-						ve_json_coders:destructure_json (Json, {object, attributes, Record, true});
-					{ok, Encoding} ->
-						{error, {unexpected_transfer_encoding, Encoding}};
-					Error = {error, _} ->
-						ve_transcript:trace_error ("a", [{r, Error}]),
-						Error
-				end
-			end};
+	Transformer = fun (Json) ->
+			case ve_json_coders:destructure_json (Json, {object, attribute, <<"transfer-encoding">>, {string}}) of
+				{ok, <<"identity">>} ->
+					Record = #ms_os_data_v1{
+							type = {<<"content-type">>, {schema, fun schema_json/1, content_type}},
+							data = {<<"content">>, {json}}},
+					% FIXME: Check for other extra attributes!
+					ve_json_coders:destructure_json (Json, {object, attributes, Record, true});
+				{ok, Encoding} ->
+					{error, {unexpected_transfer_encoding, Encoding}};
+				Error = {error, _} ->
+					ve_transcript:trace_error ("a", [{r, Error}]),
+					Error
+			end
+		end,
+	{transform_ok, Transformer};
 	
-schema_json ({data, base64}) ->
-	{transform_ok,
-			fun (Json) ->
-				case ve_json_coders:destructure_json (Json, {object, attribute, <<"transfer-encoding">>, {string}}) of
-					{ok, <<"hex">>} ->
-						{error, {unsupported_transfer_encoding, <<"hex">>}};
-					{ok, Encoding} ->
-						{error, {unexpected_transfer_encoding, Encoding}};
-					Error = {error, _} ->
-						Error
-				end
-			end};
+schema_json ({data, hex}) ->
+	Transformer = fun (Json) ->
+			case ve_json_coders:destructure_json (Json, {object, attribute, <<"transfer-encoding">>, {string}}) of
+				{ok, <<"hex">>} ->
+					{error, {unsupported_transfer_encoding, <<"hex">>}};
+				{ok, Encoding} ->
+					{error, {unexpected_transfer_encoding, Encoding}};
+				Error = {error, _} ->
+					Error
+			end
+		end,
+	{transform_ok, Transformer};
 	
 schema_json (attachment) ->
 	Record = #ms_os_attachment_v1{
@@ -1194,7 +1391,12 @@ schema_json (attachment) ->
 	{object, attributes, Record, false};
 	
 schema_json (annotations) ->
-	{object, attributes_map, {record, ms_os_annotation_v1}, {schema, fun schema_json/1, identifier}, {json}};
+	{object, attributes_map, {record, ms_os_annotation_v1},
+			{schema, fun schema_json/1, identifier},
+			{schema, fun schema_json/1, annotation_value}};
+	
+schema_json (annotation_value) ->
+	schema_json (value);
 	
 schema_json (identifier) ->
 	{string};
@@ -1203,7 +1405,10 @@ schema_json (content_type) ->
 	{string};
 	
 schema_json (fingerprint) ->
-	{string}.
+	{string};
+	
+schema_json (value) ->
+	{json}.
 
 
 %----------------------------------------------------------------------------
