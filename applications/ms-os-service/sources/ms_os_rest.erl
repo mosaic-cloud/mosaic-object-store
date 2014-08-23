@@ -14,17 +14,17 @@
 
 -ve_cowboy_rest_route ({
 		any, [<<"v1">>, <<"collections">>],
-		{false, [get, delete], [], [{json, utf8}, json]},
+		{true, [get], [], [{json, utf8}, json]},
 		{collections}}).
 
 -ve_cowboy_rest_route ({
 		any, [<<"v1">>, <<"collections">>, collection],
-		{false, [get, delete], [], [{json, utf8}, json]},
+		{true, [get], [], [{json, utf8}, json]},
 		{collection}}).
 
 -ve_cowboy_rest_route ({
 		any, [<<"v1">>, <<"collections">>, collection, <<"objects">>],
-		{true, [get, delete], [], [{json, utf8}, json]},
+		{true, [get], [], [{json, utf8}, json]},
 		{collection, objects}}).
 
 
@@ -60,7 +60,7 @@
 
 -ve_cowboy_rest_route ({
 		any, [<<"v1">>, <<"collections">>, collection, <<"objects">>, object, <<"links">>, link, reference],
-		{true, [get], [{json, utf8}, json], [{json, utf8}, json]},
+		{true, [get, put, delete], [{json, utf8}, json], [{json, utf8}, json]},
 		{object, link, reference}}).
 
 -ve_cowboy_rest_route ({
@@ -142,23 +142,29 @@
 
 -ve_cowboy_rest_route ({
 		any, [<<"v1">>, <<"attachments">>],
-		{false, [get, delete], [], [{json, utf8}, json]},
+		{false, [get], [], [{json, utf8}, json]},
 		{attachments}}).
 
 -ve_cowboy_rest_route ({
 		any, [<<"v1">>, <<"attachments">>, attachment],
-		{false, [get, delete], [], [{json, utf8}, json]},
+		{false, [get], [], [{json, utf8}, json]},
 		{attachment}}).
 
 -ve_cowboy_rest_route ({
 		any, [<<"v1">>, <<"attachments">>, attachment, <<"data">>],
-		{false, [get, delete], [], [any]},
+		{false, [get], [], [any]},
 		{attachment, data}}).
 
 -ve_cowboy_rest_route ({
 		any, [<<"v1">>, <<"attachments">>, attachment, <<"annotations">>],
 		{false, [get, put, delete], [{json, utf8}, json], [{json, utf8}, json]},
 		{attachment, annotations}}).
+
+-ve_cowboy_rest_route ({
+		any, [<<"v1">>, <<"attachments">>, attachment, <<"annotations">>, annotation],
+		{false, [get, put, delete], [{json, utf8}, json], [{json, utf8}, json]},
+		{attachment, annotation}}).
+
 
 -ve_cowboy_rest_route ({
 		any, [<<"v1">>, <<"export">>],
@@ -222,7 +228,16 @@ rest_accept_content (ContentType, Rest, Request, State) ->
 				end;
 			
 			{{object, index}, {json, utf8}} ->
-				{error, not_implemented};
+				IndexValues = enforce_ok_1 (ms_os_coders:decode_json_object_index_values (Content)),
+				{ObjectKey, Exists} = Rest ({cache, object_key_and_exists}),
+				if
+					Exists ->
+						IndexKey = Rest ({cache, object_index_key}),
+						enforce_ok (ms_os_api:object_patch (ObjectKey, index_values, update, {IndexKey, IndexValues})),
+						{ok, true, Request_2};
+					true ->
+						{ok, false, Request_2}
+				end;
 			
 			{{object, links}, {json, utf8}} ->
 				Links = enforce_ok_1 (ms_os_coders:decode_json_object_links (Content)),
@@ -236,7 +251,29 @@ rest_accept_content (ContentType, Rest, Request, State) ->
 				end;
 			
 			{{object, link}, {json, utf8}} ->
-				{error, not_implemented};
+				LinkReferences = enforce_ok_1 (ms_os_coders:decode_json_object_link_references (Content)),
+				{ObjectKey, Exists} = Rest ({cache, object_key_and_exists}),
+				if
+					Exists ->
+						LinkKey = Rest ({cache, object_link_key}),
+						enforce_ok (ms_os_api:object_patch (ObjectKey, link_references, update, {LinkKey, LinkReferences})),
+						{ok, true, Request_2};
+					true ->
+						{ok, false, Request_2}
+				end;
+			
+			{{object, link, reference}, {json, utf8}} ->
+				LinkReference = enforce_ok_1 (ms_os_coders:decode_json_object_link_reference (Content)),
+				{ObjectKey, Exists} = Rest ({cache, object_key_and_exists}),
+				if
+					Exists ->
+						LinkKey = Rest ({cache, object_link_key}),
+						LinkReferenceKey = Rest ({cache, object_link_reference_key}),
+						enforce_ok (ms_os_api:object_patch (ObjectKey, link_reference, update, {LinkKey, LinkReferenceKey, LinkReference})),
+						{ok, true, Request_2};
+					true ->
+						{ok, false, Request_2}
+				end;
 			
 			{{object, attachments}, {json, utf8}} ->
 				Attachments = enforce_ok_1 (ms_os_coders:decode_json_object_attachments (Content)),
@@ -250,16 +287,44 @@ rest_accept_content (ContentType, Rest, Request, State) ->
 				end;
 			
 			{{object, attachment}, {json, utf8}} ->
-				{error, not_implemented};
-			{{object, attachment, data}, _} ->
-				{error, not_implemented};
+				Attachment = enforce_ok_1 (ms_os_coders:decode_json_object_attachment (Content)),
+				{ObjectKey, Exists} = Rest ({cache, object_key_and_exists}),
+				if
+					Exists ->
+						AttachmentKey = Rest ({cache, object_attachment_key}),
+						enforce_ok (ms_os_api:object_patch (ObjectKey, attachment, update, {AttachmentKey, Attachment})),
+						{ok, true, Request_2};
+					true ->
+						{ok, false, Request_2}
+				end;
+			
 			{{object, attachment, annotations}, {json, utf8}} ->
-				{error, not_implemented};
+				Annotations = enforce_ok_1 (ms_os_coders:decode_json_object_annotations (Content)),
+				{ObjectKey, Exists} = Rest ({cache, object_key_and_exists}),
+				if
+					Exists ->
+						AttachmentKey = Rest ({cache, object_attachment_key}),
+						enforce_ok (ms_os_api:object_patch (ObjectKey, attachment, update_annotations, {AttachmentKey, Annotations})),
+						{ok, true, Request_2};
+					true ->
+						{ok, false, Request_2}
+				end;
+			
 			{{object, attachment, annotation}, {json, utf8}} ->
-				{error, not_implemented};
+				AnnotationValue = enforce_ok_1 (ms_os_coders:decode_json_object_annotation_value (Content)),
+				{ObjectKey, Exists} = Rest ({cache, object_key_and_exists}),
+				if
+					Exists ->
+						AttachmentKey = Rest ({cache, object_attachment_key}),
+						AnnotationKey = Rest ({cache, object_attachment_annotation_key}),
+						enforce_ok (ms_os_api:object_patch (ObjectKey, attachment, update_annotation, {AttachmentKey, AnnotationKey, AnnotationValue})),
+						{ok, true, Request_2};
+					true ->
+						{ok, false, Request_2}
+				end;
 			
 			{{object, annotations}, {json, utf8}} ->
-				Annotations = enforce_ok_1 (ms_os_coders:decode_json_annotations (Content)),
+				Annotations = enforce_ok_1 (ms_os_coders:decode_json_object_annotations (Content)),
 				{ObjectKey, Exists} = Rest ({cache, object_key_and_exists}),
 				if
 					Exists ->
@@ -270,12 +335,35 @@ rest_accept_content (ContentType, Rest, Request, State) ->
 				end;
 			
 			{{object, annotation}, {json, utf8}} ->
-				{error, not_implemented};
+				AnnotationValue = enforce_ok_1 (ms_os_coders:decode_json_object_annotation_value (Content)),
+				{ObjectKey, Exists} = Rest ({cache, object_key_and_exists}),
+				if
+					Exists ->
+						AnnotationKey = Rest ({cache, object_annotation_key}),
+						enforce_ok (ms_os_api:object_patch (ObjectKey, annotation, update, {AnnotationKey, AnnotationValue})),
+						{ok, true, Request_2};
+					true ->
+						{ok, false, Request_2}
+				end;
 			
 			{{import}, {json, utf8}} ->
-				Objects = enforce_ok_1 (ve_json_coders:destructure_json (Content, {list, {transform_ok, fun ms_os_coders:decode_json_object/1}})),
-				ok = enforce_ok_foreach (fun ms_os_api:object_create/1, Objects),
-				{ok, true, Request_2};
+				Objects = enforce_ok_1 (ms_os_coders:decode_json_objects (Content)),
+				Outcomes = lists:filtermap (
+						fun (Object) ->
+							case ms_os_api:object_create (Object) of
+								ok ->
+									false;
+								{error, Reason} ->
+									{true, {Reason, Object}}
+							end
+						end,
+						Objects),
+				case Outcomes of
+					[] ->
+						{ok, true, Request_2};
+					_ ->
+						{error, Outcomes, Request_2}
+				end;
 			
 			{RequestedResource, RequestedContentType} ->
 				{error, {not_supported, RequestedResource, RequestedContentType}}
@@ -307,16 +395,16 @@ rest_provide_content (ContentType, Rest, Request, State) ->
 				Json = enforce_ok_1 (ms_os_coders:encode_json_object_indices (Rest ({cache, object_indices}))),
 				{content, {json, utf8}, Json};
 			{object, index} ->
-				Json = enforce_ok_1 (ms_os_coders:encode_json_object_index (Rest ({cache, object_index}))),
+				Json = enforce_ok_1 (ms_os_coders:encode_json_object_index_values (Rest ({cache, object_index}))),
 				{content, {json, utf8}, Json};
 			{object, links} ->
 				Json = enforce_ok_1 (ms_os_coders:encode_json_object_links (Rest ({cache, object_links}))),
 				{content, {json, utf8}, Json};
 			{object, link} ->
-				Json = enforce_ok_1 (ms_os_coders:encode_json_object_link (Rest ({cache, object_link}))),
+				Json = enforce_ok_1 (ms_os_coders:encode_json_object_link_references (Rest ({cache, object_link}))),
 				{content, {json, utf8}, Json};
 			{object, link, reference} ->
-				Json = enforce_ok_1 (ms_os_coders:encode_json_object_key (Rest ({cache, object_link_reference}))),
+				Json = enforce_ok_1 (ms_os_coders:encode_json_object_link_reference (Rest ({cache, object_link_reference}))),
 				{content, {json, utf8}, Json};
 			{object, attachments} ->
 				Json = enforce_ok_1 (ms_os_coders:encode_json_object_attachments (Rest ({cache, object_attachments}))),
@@ -325,16 +413,16 @@ rest_provide_content (ContentType, Rest, Request, State) ->
 				Json = enforce_ok_1 (ms_os_coders:encode_json_object_attachment (Rest ({cache, object_attachment}))),
 				{content, {json, utf8}, Json};
 			{object, attachment, annotations} ->
-				Json = enforce_ok_1 (ms_os_coders:encode_json_annotations (Rest ({cache, object_attachment_annotations}))),
+				Json = enforce_ok_1 (ms_os_coders:encode_json_object_annotations (Rest ({cache, object_attachment_annotations}))),
 				{content, {json, utf8}, Json};
 			{object, attachment, annotation} ->
-				Json = enforce_ok_1 (ms_os_coders:encode_json_annotation (Rest ({cache, object_attachment_annotation}))),
+				Json = enforce_ok_1 (ms_os_coders:encode_json_object_annotation_value (Rest ({cache, object_attachment_annotation}))),
 				{content, {json, utf8}, Json};
 			{object, annotations} ->
-				Json = enforce_ok_1 (ms_os_coders:encode_json_annotations (Rest ({cache, object_annotations}))),
+				Json = enforce_ok_1 (ms_os_coders:encode_json_object_annotations (Rest ({cache, object_annotations}))),
 				{content, {json, utf8}, Json};
 			{object, annotation} ->
-				Json = enforce_ok_1 (ms_os_coders:encode_json_annotation (Rest ({cache, object_annotation}))),
+				Json = enforce_ok_1 (ms_os_coders:encode_json_object_annotation_value (Rest ({cache, object_annotation}))),
 				{content, {json, utf8}, Json};
 			
 			{collections} ->
@@ -351,23 +439,23 @@ rest_provide_content (ContentType, Rest, Request, State) ->
 			{index} ->
 				{content, {json, utf8}, null};
 			{index, select, equals} ->
-				Value = enforce_ok_1 (ve_json_coders:decode_json (Rest ({binding, value}))),
+				Value = enforce_ok_1 (ms_os_coders:decode_json_object_index_value (enforce_ok_1 (ve_json_coders:decode_json (Rest ({binding, value}))))),
 				ObjectKeys = enforce_ok_1 (ms_os_api:objects_select ({index, Rest ({cache, index_key}), {equals, Value}}, key)),
 				Json = enforce_ok_map (fun ms_os_coders:encode_json_object_key/1, ObjectKeys),
 				{content, {json, utf8}, Json};
 			{index, select, lesser} ->
-				MaxValue = enforce_ok_1 (ve_json_coders:decode_json (Rest ({binding, max_value}))),
+				MaxValue = enforce_ok_1 (ms_os_coders:decode_json_object_index_value (enforce_ok_1 (ve_json_coders:decode_json (Rest ({binding, max_value}))))),
 				ObjectKeys = enforce_ok_1 (ms_os_api:objects_select ({index, Rest ({cache, index_key}), {lesser, MaxValue}}, key)),
 				Json = enforce_ok_map (fun ms_os_coders:encode_json_object_key/1, ObjectKeys),
 				{content, {json, utf8}, Json};
 			{index, select, greater} ->
-				MinValue = enforce_ok_1 (ve_json_coders:decode_json (Rest ({binding, min_value}))),
+				MinValue = enforce_ok_1 (ms_os_coders:decode_json_object_index_value (enforce_ok_1 (ve_json_coders:decode_json (Rest ({binding, min_value}))))),
 				ObjectKeys = enforce_ok_1 (ms_os_api:objects_select ({index, Rest ({cache, index_key}), {greater, MinValue}}, key)),
 				Json = enforce_ok_map (fun ms_os_coders:encode_json_object_key/1, ObjectKeys),
 				{content, {json, utf8}, Json};
 			{index, select, range} ->
-				MinValue = enforce_ok_1 (ve_json_coders:decode_json (Rest ({binding, min_value}))),
-				MaxValue = enforce_ok_1 (ve_json_coders:decode_json (Rest ({binding, max_value}))),
+				MinValue = enforce_ok_1 (ms_os_coders:decode_json_object_index_value (enforce_ok_1 (ve_json_coders:decode_json (Rest ({binding, min_value}))))),
+				MaxValue = enforce_ok_1 (ms_os_coders:decode_json_object_index_value (enforce_ok_1 (ve_json_coders:decode_json (Rest ({binding, max_value}))))),
 				ObjectKeys = enforce_ok_1 (ms_os_api:objects_select ({index, Rest ({cache, index_key}), {range, MinValue, MaxValue}}, key)),
 				Json = enforce_ok_map (fun ms_os_coders:encode_json_object_key/1, ObjectKeys),
 				{content, {json, utf8}, Json};
@@ -429,6 +517,15 @@ rest_resource_exists (Rest, Request, State) ->
 				if
 					Exists ->
 						{ok, {moved, temporarily, Rest ({cache, object_link_reference_redirect})}};
+					true ->
+						{ok, false}
+				end;
+			
+			{object, attachment, data} ->
+				Exists = (Rest ({cache, object_attachment}) =/= missing),
+				if
+					Exists ->
+						{ok, {moved, temporarily, Rest ({cache, object_attachment_data_redirect})}};
 					true ->
 						{ok, false}
 				end;
