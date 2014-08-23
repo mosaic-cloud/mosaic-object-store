@@ -160,12 +160,22 @@
 		{false, [get, put, delete], [{json, utf8}, json], [{json, utf8}, json]},
 		{attachment, annotations}}).
 
+-ve_cowboy_rest_route ({
+		any, [<<"v1">>, <<"export">>],
+		{true, [get], [], [{json, utf8}, json]},
+		{export}}).
+
+-ve_cowboy_rest_route ({
+		any, [<<"v1">>, <<"import">>],
+		{true, [post], [{json, utf8}, json], [any]},
+		{import}}).
+
 
 %----------------------------------------------------------------------------
 %----------------------------------------------------------------------------
 
 
--import (ve_enforcements, [enforce_ok/1, enforce_ok_1/1, enforce_ok_2/1, enforce_ok_map/2]).
+-import (ve_enforcements, [enforce_ok/1, enforce_ok_1/1, enforce_ok_2/1, enforce_ok_map/2, enforce_ok_foreach/2]).
 
 
 -include ("ms_os_coders.hrl").
@@ -262,6 +272,11 @@ rest_accept_content (ContentType, Rest, Request, State) ->
 			{{object, annotation}, {json, utf8}} ->
 				{error, not_implemented};
 			
+			{{import}, {json, utf8}} ->
+				Objects = enforce_ok_1 (ve_json_coders:destructure_json (Content, {list, {transform_ok, fun ms_os_coders:decode_json_object/1}})),
+				ok = enforce_ok_foreach (fun ms_os_api:object_create/1, Objects),
+				{ok, true, Request_2};
+			
 			{RequestedResource, RequestedContentType} ->
 				{error, {not_supported, RequestedResource, RequestedContentType}}
 		end
@@ -357,6 +372,11 @@ rest_provide_content (ContentType, Rest, Request, State) ->
 				Json = enforce_ok_map (fun ms_os_coders:encode_json_object_key/1, ObjectKeys),
 				{content, {json, utf8}, Json};
 			
+			{export} ->
+				Objects = enforce_ok_1 (ms_os_api:objects_select (any, object)),
+				Json = enforce_ok_map (fun ms_os_coders:encode_json_object/1, Objects),
+				{content, {json, utf8}, Json};
+			
 			RequestedResource ->
 				{error, {not_supported, RequestedResource, ContentType}}
 		end
@@ -431,6 +451,11 @@ rest_resource_exists (Rest, Request, State) ->
 			{index, select, greater} ->
 				{ok, true};
 			{index, select, range} ->
+				{ok, true};
+			
+			{export} ->
+				{ok, true};
+			{import} ->
 				{ok, true};
 			
 			RequestedResource ->

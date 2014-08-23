@@ -129,6 +129,9 @@ patch_object (Patch, _Object) ->
 %----------------------------------------------------------------------------
 
 
+match_object (any, _Object) ->
+	{ok, true};
+	
 match_object ({key, Key}, Object) ->
 	{ok, Key =:= Object#ms_os_object_v1.key};
 	
@@ -567,6 +570,9 @@ coerce_object_selector (Selector) ->
 	end.
 
 
+coerce_object_selector_ok (any) ->
+	any;
+	
 coerce_object_selector_ok ({key, Key}) ->
 	{key, enforce_ok_1 (coerce_object_key (Key))};
 	
@@ -1102,7 +1108,7 @@ schema_json ({object, WithKey}) ->
 			data = {<<"data">>, {'orelse', [{equals, null, none}, {schema, fun schema_json/1, object_data}]}, none},
 			indices = {<<"indices">>, {'orelse', [{equals, null, []}, {schema, fun schema_json/1, object_indices}]}, []},
 			links = {<<"links">>, {'orelse', [{equals, null, []}, {schema, fun schema_json/1, object_links}]}, []},
-			attachments = {<<"attachments">>, {'orelse', [{equals, null, []}, {schema, fun schema_json/1, object_attachment}]}, []},
+			attachments = {<<"attachments">>, {'orelse', [{equals, null, []}, {schema, fun schema_json/1, object_attachments}]}, []},
 			annotations = {<<"annotations">>, {'orelse', [{equals, null, []}, {schema, fun schema_json/1, annotations}]}, []}},
 	{object, attributes, Record, false};
 	
@@ -1137,10 +1143,47 @@ schema_json (object_attachments) ->
 			{'orelse', [{equals, null, none}, {schema, fun schema_json/1, attachment}]}};
 	
 schema_json (data) ->
+	{'orelse', [
+			{schema, fun schema_json/1, {data, none}},
+			{schema, fun schema_json/1, {data, identity}},
+			{schema, fun schema_json/1, {data, base64}}]};
+	
+schema_json ({data, none}) ->
 	Record = #ms_os_data_v1{
 			type = {<<"content-type">>, {schema, fun schema_json/1, content_type}},
 			data = {<<"content">>, {json}}},
 	{object, attributes, Record, false};
+	
+schema_json ({data, identity}) ->
+	{transform_ok,
+			fun (Json) ->
+				case ve_json_coders:destructure_json (Json, {object, attribute, <<"transfer-encoding">>, {string}}) of
+					{ok, <<"identity">>} ->
+						Record = #ms_os_data_v1{
+								type = {<<"content-type">>, {schema, fun schema_json/1, content_type}},
+								data = {<<"content">>, {json}}},
+						% FIXME: Check for other extra attributes!
+						ve_json_coders:destructure_json (Json, {object, attributes, Record, true});
+					{ok, Encoding} ->
+						{error, {unexpected_transfer_encoding, Encoding}};
+					Error = {error, _} ->
+						ve_transcript:trace_error ("a", [{r, Error}]),
+						Error
+				end
+			end};
+	
+schema_json ({data, base64}) ->
+	{transform_ok,
+			fun (Json) ->
+				case ve_json_coders:destructure_json (Json, {object, attribute, <<"transfer-encoding">>, {string}}) of
+					{ok, <<"hex">>} ->
+						{error, {unsupported_transfer_encoding, <<"hex">>}};
+					{ok, Encoding} ->
+						{error, {unexpected_transfer_encoding, Encoding}};
+					Error = {error, _} ->
+						Error
+				end
+			end};
 	
 schema_json (attachment) ->
 	Record = #ms_os_attachment_v1{
