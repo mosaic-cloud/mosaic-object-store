@@ -7,7 +7,7 @@
 		data :: ms_os_data() | none | any(),
 		indices :: list(ms_os_object_index()) | any(),
 		links :: list(ms_os_object_link()) | any(),
-		attachments :: list({ms_os_identifier(), ms_os_attachment()}) | any(),
+		attachments :: list(ms_os_attachment()) | any(),
 		annotations :: list(ms_os_annotation()) | any()}).
 
 -record (ms_os_object_key_v1, {
@@ -15,11 +15,11 @@
 		object :: ms_os_identifier() | any()}).
 
 -record (ms_os_object_index_v1, {
-		index :: ms_os_identifier() | any(),
+		key :: ms_os_identifier() | any(),
 		values :: list(ms_os_value()) | any()}).
 
 -record (ms_os_object_link_v1, {
-		link :: ms_os_identifier() | any(),
+		key :: ms_os_identifier() | any(),
 		references :: list(ms_os_object_key()) | any()}).
 
 
@@ -28,13 +28,14 @@
 		data :: any()}).
 
 -record (ms_os_attachment_v1, {
+		key :: ms_os_identifier() | any(),
 		type :: ms_os_content_type() | any(),
 		size :: pos_integer() | any(),
 		fingerprint :: ms_os_fingerprint() | any(),
 		annotations :: list(ms_os_annotation()) | any()}).
 
 -record (ms_os_annotation_v1, {
-		annotation :: ms_os_identifier() | any(),
+		key :: ms_os_identifier() | any(),
 		value :: ms_os_value() | any()}).
 
 
