@@ -136,14 +136,14 @@ patch_object_ok ({indices_all, exclude}, Object) ->
 	Object#ms_os_object_v1{indices = []};
 	
 patch_object_ok ({indices_all, update, Indices}, Object) ->
-	Object#ms_os_object_v1{indices = Indices};
+	Object#ms_os_object_v1{indices = coerce_records_ok (Indices)};
 	
 patch_object_ok ({indices_each, Operation, Indices}, Object)
 			when (Operation =:= update); (Operation =:= include); (Operation =:= exclude) ->
 	Object#ms_os_object_v1{indices = patch_records_ok (Operation, Indices, Object#ms_os_object_v1.indices)};
 	
 patch_object_ok ({index_values, update, Index, Values}, Object) ->
-	patch_object_ok ({indices_each, update, [#ms_os_object_index_v1{key = Index, values = Values}]}, Object);
+	patch_object_ok ({indices_each, update, [#ms_os_object_index_v1{key = Index, values = coerce_values_ok (Values)}]}, Object);
 	
 patch_object_ok ({index_values, Operation, Index_, Values}, Object)
 			when (Operation =:= include); (Operation =:= exclude) ->
@@ -158,19 +158,19 @@ patch_object_ok ({links_all, exclude}, Object) ->
 	Object#ms_os_object_v1{links = []};
 	
 patch_object_ok ({links_all, update, Links}, Object) ->
-	Object#ms_os_object_v1{links = Links};
+	Object#ms_os_object_v1{links = coerce_records_ok (Links)};
 	
 patch_object_ok ({links_each, Operation, Links}, Object)
 			when (Operation =:= update); (Operation =:= include); (Operation =:= exclude) ->
 	Object#ms_os_object_v1{links = patch_records_ok (Operation, Links, Object#ms_os_object_v1.links)};
 	
 patch_object_ok ({link_references, update, Link, References}, Object) ->
-	patch_object_ok ({links_each, update, [#ms_os_object_link_v1{key = Link, references = References}]}, Object);
+	patch_object_ok ({links_each, update, [#ms_os_object_link_v1{key = Link, references = coerce_values_ok (References)}]}, Object);
 	
-patch_object_ok ({link_references, Operation, Link_, Values}, Object)
+patch_object_ok ({link_references, Operation, Link_, References}, Object)
 			when (Operation =:= include); (Operation =:= exclude) ->
 	Transformer = fun (Link) ->
-		Link#ms_os_object_link_v1{references = patch_values_ok (Operation, Values, Link#ms_os_object_link_v1.references)}
+		Link#ms_os_object_link_v1{references = patch_values_ok (Operation, References, Link#ms_os_object_link_v1.references)}
 	end,
 	Object#ms_os_object_v1{links = patch_records_ok ({transform, Transformer}, [Link_], Object#ms_os_object_v1.links)};
 	
@@ -180,7 +180,7 @@ patch_object_ok ({attachments_all, exclude}, Object) ->
 	Object#ms_os_object_v1{attachments = []};
 	
 patch_object_ok ({attachments_all, update, Attachments}, Object) ->
-	Object#ms_os_object_v1{attachments = Attachments};
+	Object#ms_os_object_v1{attachments = coerce_records_ok (Attachments)};
 	
 patch_object_ok ({attachments_each, Operation, Attachments}, Object)
 			when (Operation =:= update); (Operation =:= include); (Operation =:= exclude) ->
@@ -192,7 +192,7 @@ patch_object_ok ({annotations_all, exclude}, Object) ->
 	Object#ms_os_object_v1{annotations = []};
 	
 patch_object_ok ({annotations_all, update, Annotations}, Object) ->
-	Object#ms_os_object_v1{annotations = Annotations};
+	Object#ms_os_object_v1{annotations = coerce_records_ok (Annotations)};
 	
 patch_object_ok ({annotations_each, Operation, Annotations}, Object)
 			when (Operation =:= update); (Operation =:= include); (Operation =:= exclude) ->
@@ -210,7 +210,7 @@ patch_object_ok (Patch, _Object) ->
 
 
 patch_records_ok (update, NewRecords, OldRecords) ->
-	lists:foldl (
+	coerce_records_ok (lists:foldl (
 			fun (NewRecord, CurrentRecords) ->
 				case lists:keytake (element (2, NewRecord), 2, CurrentRecords) of
 					{value, _OldRecord, CurrentRecords_2} ->
@@ -219,10 +219,10 @@ patch_records_ok (update, NewRecords, OldRecords) ->
 						throw ({error, {missing, element (2, NewRecord)}})
 				end
 			end,
-			OldRecords, NewRecords);
+			OldRecords, NewRecords));
 	
 patch_records_ok (include, NewRecords, OldRecords) ->
-	lists:foldl (
+	coerce_records_ok (lists:foldl (
 			fun (NewRecord, CurrentRecords) ->
 				case lists:keysearch (element (2, NewRecord), 2, CurrentRecords) of
 					{value, _OldRecord} ->
@@ -231,10 +231,10 @@ patch_records_ok (include, NewRecords, OldRecords) ->
 						[NewRecord | CurrentRecords]
 				end
 			end,
-			OldRecords, NewRecords);
+			OldRecords, NewRecords));
 	
 patch_records_ok (exclude, NewRecords, OldRecords) ->
-	lists:foldl (
+	coerce_records_ok (lists:foldl (
 			fun (NewRecord, CurrentRecords) ->
 				case lists:keytake (NewRecord, 2, CurrentRecords) of
 					{value, _OldRecord, CurrentRecords_2} ->
@@ -243,10 +243,10 @@ patch_records_ok (exclude, NewRecords, OldRecords) ->
 						throw ({error, {missing, NewRecord}})
 				end
 			end,
-			OldRecords, NewRecords);
+			OldRecords, NewRecords));
 	
 patch_records_ok ({transform, Transformer}, NewRecords, OldRecords) ->
-	lists:foldl (
+	coerce_records_ok (lists:foldl (
 			fun (NewRecord, CurrentRecords) ->
 				case lists:keytake (NewRecord, 2, CurrentRecords) of
 					{value, OldRecord, CurrentRecords_2} ->
@@ -255,23 +255,23 @@ patch_records_ok ({transform, Transformer}, NewRecords, OldRecords) ->
 						throw ({error, {missing, NewRecord}})
 				end
 			end,
-			OldRecords, NewRecords).
+			OldRecords, NewRecords)).
 
 
 patch_values_ok (include, NewValues, OldValues) ->
-	lists:foldl (
+	coerce_values_ok (lists:foldl (
 			fun (NewValue, CurrentValues) ->
 				case lists_take (NewValue, CurrentValues) of
 					{value, _} ->
 						throw ({error, {exsting, NewValue}});
 					false ->
-						[NewValue, CurrentValues]
+						[NewValue | CurrentValues]
 				end
 			end,
-			OldValues, NewValues);
+			OldValues, NewValues));
 	
 patch_values_ok (exclude, NewValues, OldValues) ->
-	lists:foldl (
+	coerce_values_ok (lists:foldl (
 			fun (NewValue, CurrentValues) ->
 				case lists_take (NewValue, CurrentValues) of
 					{value, CurrentValues_2} ->
@@ -280,7 +280,7 @@ patch_values_ok (exclude, NewValues, OldValues) ->
 						throw ({error, {missing, NewValue}})
 				end
 			end,
-			OldValues, NewValues).
+			OldValues, NewValues)).
 
 
 lists_take (Value, List) ->

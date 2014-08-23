@@ -5,7 +5,12 @@
 -module (ms_os_rest).
 
 
--export ([rest_accept_content/4, rest_provide_content/4, rest_resource_exists/3, rest_cache/4]).
+-export ([
+		rest_accept_content/4,
+		rest_provide_content/4,
+		rest_resource_exists/3,
+		rest_delete/3,
+		rest_cache/4]).
 
 
 %----------------------------------------------------------------------------
@@ -543,6 +548,66 @@ rest_provide_content (ContentType, Rest, Request, State) ->
 %----------------------------------------------------------------------------
 
 
+rest_delete (Rest, Request, State) ->
+	try
+		case State of
+			
+			{object} ->
+				enforce_ok (ms_os_api:object_destroy (Rest ({cache, object_key}))),
+				{ok, true};
+			{object, data} ->
+				enforce_ok (ms_os_api:object_destroy_data (Rest ({cache, object_key}))),
+				{ok, true};
+			{object, indices} ->
+				enforce_ok (ms_os_api:object_patch (Rest ({cache, object_key}), {indices_all, exclude})),
+				{ok, true};
+			{object, index} ->
+				enforce_ok (ms_os_api:object_patch (Rest ({cache, object_key}), {index, exclude, Rest ({cache, object_index_key})})),
+				{ok, true};
+			{object, links} ->
+				enforce_ok (ms_os_api:object_patch (Rest ({cache, object_key}), {links_all, exclude})),
+				{ok, true};
+			{object, link} ->
+				enforce_ok (ms_os_api:object_patch (Rest ({cache, object_key}), {link, exclude, Rest ({cache, object_link_key})})),
+				{ok, true};
+			{object, link, reference} ->
+				enforce_ok (ms_os_api:object_patch (Rest ({cache, object_key}), {link_reference, exclude, Rest ({cache, object_link_key}), Rest ({cache, object_link_reference})})),
+				{ok, true};
+			{object, attachments} ->
+				enforce_ok (ms_os_api:object_patch (Rest ({cache, object_key}), {attachments_all, exclude})),
+				{ok, true};
+			{object, attachment} ->
+				enforce_ok (ms_os_api:object_patch (Rest ({cache, object_key}), {attachment, exclude, Rest ({cache, object_attachment_key})})),
+				{ok, true};
+			{object, attachment, annotations} ->
+				enforce_ok (ms_os_api:object_patch (Rest ({cache, object_key}), {attachment_annotations_all, exclude, Rest ({cache, object_attachment_key})})),
+				{ok, true};
+			{object, attachment, annotation} ->
+				enforce_ok (ms_os_api:object_patch (Rest ({cache, object_key}), {attachment_annotation, exclude, Rest ({cache, object_attachment_key}), Rest ({cache, object_attachment_annotation})})),
+				{ok, true};
+			{object, annotations} ->
+				enforce_ok (ms_os_api:object_patch (Rest ({cache, object_key}), {annotations_all, exclude})),
+				{ok, true};
+			{object, annotation} ->
+				enforce_ok (ms_os_api:object_patch (Rest ({cache, object_key}), {annotation, exclude, Rest ({cache, object_annotation_key})})),
+				{ok, true};
+			
+			RequestedResource ->
+				{error, {not_supported, RequestedResource}}
+		end
+	of Outcome_X ->
+		rest_return (Outcome_X, Request, State)
+	catch
+		throw : Error_X = {error, _} ->
+			rest_return (Error_X, Request, State);
+		throw : Error_X = {error, _, _} ->
+			rest_return (Error_X, Request, State)
+	end.
+
+
+%----------------------------------------------------------------------------
+
+
 rest_resource_exists (Rest, Request, State) ->
 	try
 		case State of
@@ -753,7 +818,7 @@ rest_cache (object_attachment, Rest, Request, State) ->
 	rest_cache ({lists_keyfind, 1, 2, object_attachment_key, object_attachments}, Rest, Request, State);
 	
 rest_cache (object_attachment_annotations, Rest, _, _) ->
-	case Rest ({cache, attachment}) of
+	case Rest ({cache, object_attachment}) of
 		missing ->
 			{ok, missing};
 		Attachment ->

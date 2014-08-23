@@ -12,6 +12,7 @@
 		object_select/1, object_select/2,
 		object_update/1, object_update/6, object_update/7, object_update/2,
 		object_update_data/2, object_update_data/3, object_update_data/4,
+		object_destroy_data/1,
 		object_patch/2,
 		objects_select/1, objects_select/2]).
 
@@ -139,6 +140,13 @@ object_update_data (Key, DataType, DataData) ->
 
 object_update_data (Collection, Object, DataType, DataData) ->
 	object_update_data ({Collection, Object}, {DataType, DataData}).
+
+
+%----------------------------------------------------------------------------
+
+
+object_destroy_data (Key) ->
+	object_patch (Key, {data, exclude}).
 
 
 %----------------------------------------------------------------------------
