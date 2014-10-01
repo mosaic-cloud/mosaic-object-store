@@ -1,0 +1,4 @@
+
+{process_group_alias, 'mosaic-components:object-store', <<16#12eb4738d08c260872f6da2980aaec4f6995f570 : 160>>}.
+{process_configurator, 'mosaic-components:object-store', term, {mosaic_component_process_configurators, configure_hardcoded, defaults}}.
+{process_configurator, 'mosaic-components:object-store', json, {mosaic_component_process_configurators, configure_hardcoded, defaults}}.

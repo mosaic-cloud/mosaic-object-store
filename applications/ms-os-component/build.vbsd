@@ -6,5 +6,5 @@
 	erl: "\\./sources/.*\\.erl"
 	hrl: "\\./sources/.*\\.hrl"
 	additional-ebin: "\\./sources/.*\\.app"
-	additional-priv: "\\./sources/.*\\.config"
+	additional-priv: "\\./sources/.*\\.(config|term)"
 	otp-version: '(15 16 17))
