@@ -35,12 +35,13 @@ start_link (QualifiedName, ConfigurationSpecification) ->
 
 configuration (defaults) ->
 	Protocol = http,
-	Port = 8080,
+	{ok, Ip} = application:get_env (ms_os_service, service_ip),
+	{ok, Port} = application:get_env (ms_os_service, service_port),
 	Targets = [
 			{module, ms_os_cowboy},
 			{module, ms_os_rest}
 	],
-	{ok, {Protocol, Port, Targets}};
+	{ok, {Protocol, Ip, Port, Targets}};
 	
 configuration (Configuration) ->
 	{error, {invalid_configuration, Configuration}}.
