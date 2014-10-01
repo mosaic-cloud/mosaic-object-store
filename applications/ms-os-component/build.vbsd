@@ -1,0 +1,10 @@
+
+(vbs:require-erlang)
+
+(vbs:define-erlang-application 'ms_os_component
+	dependencies: '(mosaic_component mosaic_harness mosaic_tools)
+	erl: "\\./sources/.*\\.erl"
+	hrl: "\\./sources/.*\\.hrl"
+	additional-ebin: "\\./sources/.*\\.app"
+	additional-priv: "\\./sources/.*\\.config"
+	otp-version: '(15 16 17))
