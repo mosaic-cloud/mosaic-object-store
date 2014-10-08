@@ -80,11 +80,10 @@ handle_info ({{ms_os_component_callbacks_internals, acquire_return}, Outcome}, O
 		Descriptors = enforce_ok_1 (Outcome),
 		[ServiceSocket] = enforce_ok_1 (mosaic_component_coders:decode_socket_ipv4_tcp_descriptors (
 					[<<"service_socket">>], Descriptors)),
-		NewState = OldState#state{status = waiting_resolve_return, service_socket = ServiceSocket},
 		ok = enforce_ok (setup_applications (Identifier, ServiceSocket)),
 		ok = enforce_ok (start_applications ()),
 		ok = enforce_ok (mosaic_component_callbacks:register_async (Group, {ms_os_component_callbacks_internals, register_return})),
-		NewState = OldState#state{status = waiting_register_return},
+		NewState = OldState#state{status = waiting_register_return, service_socket = ServiceSocket},
 		{noreply, NewState}
 	catch throw : Error = {error, _Reason} -> {stop, Error, OldState} end;
 	
