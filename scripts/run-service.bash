@@ -28,6 +28,17 @@ _erl_env+=(
 		mosaic_node_fqdn="${_fqdn}"
 )
 
+if test -n "${MOSAIC_OBJECT_STORE_ENDPOINT_IP:-}" ; then
+	_erl_args+=(
+			-ms_os_service service_ip "<<\"${MOSAIC_OBJECT_STORE_ENDPOINT_IP}\">>"
+	)
+fi
+if test -n "${MOSAIC_OBJECT_STORE_ENDPOINT_PORT:-}" ; then
+	_erl_args+=(
+			-ms_os_service service_port "${MOSAIC_OBJECT_STORE_ENDPOINT_PORT}"
+	)
+fi
+
 mkdir -p -- "${_tmp}"
 cd -- "${_tmp}"
 

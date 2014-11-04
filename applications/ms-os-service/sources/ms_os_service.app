@@ -6,5 +6,7 @@
 	{modules, []},
 	{registered, []},
 	{mod, {ms_os_service_app, defaults}},
-	{env, []}
+	{env, [
+			{service_ip, none},
+			{service_port, none}]}
 ]}.
