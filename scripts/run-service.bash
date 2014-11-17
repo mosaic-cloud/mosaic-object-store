@@ -5,15 +5,19 @@ if ! test "${#}" -eq 0 ; then
 	exit 1
 fi
 
-_fqdn="${mosaic_node_fqdn:-mosaic-0.loopback.vnet}"
+_identifier="${mosaic_service_identifier:-000000008e473639744522bc8ebf89628b746387}"
 
+## chunk::be1d894b132982aa08a6adf7e406c9a9::begin ##
 if test -n "${mosaic_service_temporary:-}" ; then
 	_tmp="${mosaic_service_temporary:-}"
 elif test -n "${mosaic_temporary:-}" ; then
-	_tmp="${mosaic_temporary}/services/mosaic-object-store"
+	_tmp="${mosaic_temporary}/services/${_identifier}"
 else
-	_tmp="${TMPDIR:-/tmp}/mosaic/services/mosaic-object-store"
+	_tmp="${TMPDIR:-/tmp}/mosaic/services/${_identifier}"
 fi
+## chunk::be1d894b132982aa08a6adf7e406c9a9::end ##
+
+_fqdn="${mosaic_node_fqdn:-mosaic-0.loopback.vnet}"
 
 _erl_args+=(
 		-noinput -noshell
@@ -25,6 +29,7 @@ _erl_args+=(
 )
 _erl_env+=(
 		mosaic_service_temporary="${_tmp}"
+		mosaic_service_identifier="${_identifier}"
 		mosaic_node_fqdn="${_fqdn}"
 )
 
@@ -39,8 +44,16 @@ if test -n "${MOSAIC_OBJECT_STORE_ENDPOINT_PORT:-}" ; then
 	)
 fi
 
+## chunk::da43d7ef47da796de30612bd22b4e475::begin ##
 mkdir -p -- "${_tmp}"
 cd -- "${_tmp}"
+
+exec {_lock}<"${_tmp}"
+if ! flock -x -n "${_lock}" ; then
+	echo '[ee] failed to acquire lock; aborting!' >&2
+	exit 1
+fi
+## chunk::da43d7ef47da796de30612bd22b4e475::end ##
 
 exec env "${_erl_env[@]}" "${_erl_bin}" "${_erl_args[@]}"
 
